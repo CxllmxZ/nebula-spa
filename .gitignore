@@ -39,3 +39,22 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# env exception — commit template
+!.env.example
+
+# cloudflare
+.wrangler/
+.dev.vars
+.open-next/
+
+# build outputs (misc)
+/dist
+
+# editor
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# os
+Thumbs.db
