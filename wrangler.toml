@@ -1,0 +1,34 @@
+# ============================================
+# Cloudflare Workers configuration
+# ============================================
+# https://developers.cloudflare.com/workers/wrangler/configuration/
+#
+# Values marked with TODO must be filled in next chat during Cloudflare setup.
+
+name = "nebula-spa"
+main = ".open-next/worker.js"
+
+# Required for @opennextjs/cloudflare
+# https://opennext.js.org/cloudflare/get-started
+compatibility_date = "2026-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Enable observability (Workers logs)
+[observability]
+enabled = true
+
+# Static assets served from OpenNext build output
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
+
+# ============================================
+# D1 database binding
+# ============================================
+# Access via env.DB in Workers runtime
+# TODO: Replace database_id with output from `wrangler d1 create nebula-spa-db`
+[[d1_databases]]
+binding = "DB"
+database_name = "nebula-spa-db"
+database_id = "REPLACE_AFTER_WRANGLER_D1_CREATE"
+migrations_dir = "drizzle/migrations"
