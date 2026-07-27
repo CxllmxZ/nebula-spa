@@ -58,3 +58,6 @@ next-env.d.ts
 
 # os
 Thumbs.db
+
+# Generated seed SQL
+scripts/seed.sql

@@ -9,9 +9,15 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv ./cloudflare-env.d.ts",
+    "seed:gen": "tsx scripts/seed.ts",
+    "seed:local": "wrangler d1 execute nebula-spa-db --local --file=scripts/seed.sql",
+    "seed:remote": "wrangler d1 execute nebula-spa-db --remote --file=scripts/seed.sql",
+    "seed": "pnpm seed:gen && pnpm seed:local"
   },
   "dependencies": {
+    "@opennextjs/cloudflare": "^1.20.2",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "date-fns-tz": "^3.2.0",
@@ -29,8 +35,10 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dotenv": "^17.4.2",
     "drizzle-kit": "^0.31.10",
     "tailwindcss": "^4",
+    "tsx": "^4.23.1",
     "typescript": "^5",
     "wrangler": "^4.113.0"
   }

@@ -1,30 +1,20 @@
+import { NextResponse } from "next/server";
 import { drizzle } from "drizzle-orm/d1";
-import type { DrizzleD1Database } from "drizzle-orm/d1";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import * as schema from "./schema";
 
-// ============================================
-// Database client factory
-// ============================================
-//
-// This will be replaced with real Cloudflare D1 binding once
-// @opennextjs/cloudflare is set up (next chat).
-//
-// Final pattern (after Cloudflare setup):
-//   import { getCloudflareContext } from "@opennextjs/cloudflare";
-//   export function getDb() {
-//     const { env } = getCloudflareContext();
-//     return drizzle(env.DB, { schema });
-//   }
-//
-// For now, throw at import-time so no one tries to call it.
-
-export type DB = DrizzleD1Database<typeof schema>;
-
-export function getDb(): DB {
-  throw new Error(
-    "Database not configured yet. Setup @opennextjs/cloudflare in next chat.",
-  );
+/**
+ * Get Drizzle DB instance for the current request.
+ *
+ * Must be called within a Cloudflare Workers request context
+ * (Server Component, Server Action, Route Handler, or Middleware).
+ *
+ * Uses async initialization pattern from @opennextjs/cloudflare
+ * — cannot import DB at module top-level.
+ */
+export async function getDb() {
+  const { env } = await getCloudflareContext({ async: true });
+  return drizzle(env.nebula_spa_db, { schema });
 }
 
-// Re-export schema for convenience
-export * from "./schema";
+export type DB = Awaited<ReturnType<typeof getDb>>;
