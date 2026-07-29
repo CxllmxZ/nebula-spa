@@ -17,7 +17,10 @@
     "seed": "pnpm seed:gen && pnpm seed:local"
   },
   "dependencies": {
+    "@better-auth/drizzle-adapter": "^1.6.25",
     "@opennextjs/cloudflare": "^1.20.2",
+    "better-auth": "^1.6.25",
+    "better-auth-cloudflare": "^0.3.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "date-fns-tz": "^3.2.0",

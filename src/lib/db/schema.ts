@@ -122,3 +122,5 @@ export type NewBooking = typeof bookings.$inferInsert;
 
 export type BlockedSlot = typeof blockedSlots.$inferSelect;
 export type NewBlockedSlot = typeof blockedSlots.$inferInsert;
+
+export * from "./auth.schema";
