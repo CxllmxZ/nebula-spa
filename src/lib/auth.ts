@@ -25,6 +25,10 @@ function createAuth(
 
   return betterAuth({
     baseURL,
+    trustedOrigins: [
+      "http://localhost:8787", // wrangler dev
+      "http://localhost:3000", // pnpm dev (ถ้าใช้)
+    ],
     ...withCloudflare(
       {
         autoDetectIpAddress: true,

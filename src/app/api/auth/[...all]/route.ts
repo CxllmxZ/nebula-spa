@@ -1,18 +1,11 @@
-import { NextResponse } from "next/server";
+import { initAuth } from "@/lib/auth";
 
-// Placeholder — will be replaced with Better Auth catch-all handler
-// See: https://www.better-auth.com/docs/integrations/next
-
-export async function GET() {
-  return NextResponse.json(
-    { ok: false, message: "Auth not configured yet" },
-    { status: 501 },
-  );
+export async function POST(request: Request) {
+  const auth = await initAuth(request);
+  return auth.handler(request);
 }
 
-export async function POST() {
-  return NextResponse.json(
-    { ok: false, message: "Auth not configured yet" },
-    { status: 501 },
-  );
+export async function GET(request: Request) {
+  const auth = await initAuth(request);
+  return auth.handler(request);
 }
