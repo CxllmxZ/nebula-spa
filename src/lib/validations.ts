@@ -8,31 +8,65 @@
 import { z } from "zod";
 
 // ============================================
-// TODO: Booking form validation
+// Booking — Public create
 // ============================================
-// export const createBookingSchema = z.object({
-//   customerName: z.string().min(1, "กรอกชื่อ").max(100),
-//   customerPhone: z.string().regex(/^0\d{9}$/, "เบอร์ไม่ถูกต้อง"),
-//   serviceId: z.number().int().positive(),
-//   startsAt: z.string().datetime(),
-//   turnstileToken: z.string().min(1),
-// });
-// export type CreateBookingInput = z.infer<typeof createBookingSchema>;
+
+/**
+ * POST /api/bookings — customer creates booking.
+ *
+ * Note: date + time split (not ISO string) to match:
+ *   - Availability API pattern (?date=YYYY-MM-DD)
+ *   - Form field structure (calendar picker + time slot picker)
+ */
+export const bookingCreateSchema = z.object({
+  serviceId: z.number().int().positive(),
+
+  // YYYY-MM-DD (Bangkok local date)
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "รูปแบบวันที่ไม่ถูกต้อง (YYYY-MM-DD)"),
+
+  // HH:MM 24-hour (Bangkok local time)
+  time: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "รูปแบบเวลาไม่ถูกต้อง (HH:MM)"),
+
+  customerName: z
+    .string()
+    .trim()
+    .min(1, "กรุณากรอกชื่อ")
+    .max(100, "ชื่อยาวเกินไป"),
+
+  // Thai mobile: 10 digits starting with 0
+  customerPhone: z
+    .string()
+    .regex(/^0\d{9}$/, "เบอร์โทรไม่ถูกต้อง (10 หลัก เริ่มด้วย 0)"),
+
+  turnstileToken: z.string().min(1, "Turnstile token required"),
+
+  notes: z.string().max(500).optional(),
+});
+
+export type BookingCreateInput = z.infer<typeof bookingCreateSchema>;
 
 // ============================================
-// TODO: Service CRUD validation
+// TODO Session 6B — Admin booking management
 // ============================================
-// export const createServiceSchema = z.object({...});
-// export const updateServiceSchema = z.object({...});
+// export const adminBookingFilterSchema = z.object({...});
+// export const bookingStatusUpdateSchema = z.object({...});
 
 // ============================================
-// TODO: Business hours validation
+// TODO Session 7+ — Service CRUD
 // ============================================
-// export const updateBusinessHoursSchema = z.object({...});
+// export const serviceCreateSchema = z.object({...});
+// export const serviceUpdateSchema = z.object({...});
 
 // ============================================
-// TODO: Blocked slots validation
+// TODO Session 7+ — Business hours
 // ============================================
-// export const createBlockedSlotSchema = z.object({...});
+// export const businessHoursUpdateSchema = z.object({...});
 
-export {}; // placeholder to make this a module
+// ============================================
+// TODO Session 7+ — Blocked slots
+// ============================================
+// export const blockedSlotCreateSchema = z.object({...});
