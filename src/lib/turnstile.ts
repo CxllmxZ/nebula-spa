@@ -38,7 +38,6 @@ export async function verifyTurnstileToken(
 ): Promise<boolean> {
   if (!token) return false;
   if (!secretKey) {
-    console.error("[Turnstile] TURNSTILE_SECRET_KEY not configured");
     return false;
   }
 

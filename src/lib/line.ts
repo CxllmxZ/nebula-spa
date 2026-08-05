@@ -51,6 +51,11 @@ export async function pushLineText(
   userId: string,
   text: string,
 ): Promise<void> {
+  if (process.env.LINE_ENABLED !== "true") {
+    console.log("[LINE disabled] would push:", { userId, text });
+    return;
+  }
+
   if (!channelAccessToken || !userId) {
     throw new Error("[LINE] Missing channelAccessToken or userId");
   }

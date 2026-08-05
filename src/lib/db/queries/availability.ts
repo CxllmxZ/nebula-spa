@@ -155,17 +155,20 @@ export async function hasBookingConflict(
   startsAt: Date,
   endsAt: Date,
 ): Promise<boolean> {
+  // Convert Date → Unix seconds manually for raw SQL template
+  // (lt() auto-serializes, but sql`` does not — session 5 gotcha)
+  const startsAtSec = Math.floor(startsAt.getTime() / 1000);
   const db = await getDb();
 
-  // Overlap logic: existing.start < requested.end AND existing.end > requested.start
   const [conflict] = await db
     .select({ id: bookings.id })
     .from(bookings)
     .where(
       and(
         lt(bookings.startsAt, endsAt),
-        // Drizzle doesn't have gt() shorthand for timestamp — use raw comparison
-        sql`${bookings.endsAt} > ${startsAt}`,
+        // Drizzle doesn't have gt() shorthand for timestamp — use raw comparison.
+        // Must pass Unix seconds (not Date) because sql`` doesn't serialize.
+        sql`${bookings.endsAt} > ${startsAtSec}`,
         inArray(bookings.status, [...BLOCKING_STATUSES]),
       ),
     )
