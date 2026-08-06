@@ -50,10 +50,61 @@ export const bookingCreateSchema = z.object({
 export type BookingCreateInput = z.infer<typeof bookingCreateSchema>;
 
 // ============================================
-// TODO Session 6B — Admin booking management
+// Booking — Admin filter & status update
 // ============================================
-// export const adminBookingFilterSchema = z.object({...});
-// export const bookingStatusUpdateSchema = z.object({...});
+const BOOKING_STATUSES = [
+  "pending",
+  "confirmed",
+  "completed",
+  "cancelled",
+  "no-show",
+] as const;
+
+/**
+ * GET /api/admin/bookings — list with filter.
+ *
+ * All filters optional + combinable.
+ * Query params coerce: strings from URL → number/date where needed.
+ */
+export const adminBookingFilterSchema = z.object({
+  // Date range (Bangkok calendar date)
+  dateFrom: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "รูปแบบวันที่ไม่ถูกต้อง")
+    .optional(),
+  dateTo: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "รูปแบบวันที่ไม่ถูกต้อง")
+    .optional(),
+
+  // Multi-status: "confirmed" or "confirmed,pending"
+  status: z
+    .string()
+    .optional()
+    .transform((v) => (v ? v.split(",").map((s) => s.trim()) : undefined))
+    .pipe(z.array(z.enum(BOOKING_STATUSES)).optional()),
+
+  serviceId: z.coerce.number().int().positive().optional(),
+
+  // Search: matches name / phone / code
+  search: z.string().trim().min(1).max(100).optional(),
+
+  // Pagination
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+export type AdminBookingFilter = z.infer<typeof adminBookingFilterSchema>;
+
+/**
+ * PATCH /api/admin/bookings/[id] — status change only.
+ * MVP: no other fields editable (workaround: cancel + create new).
+ */
+export const bookingStatusUpdateSchema = z.object({
+  status: z.enum(BOOKING_STATUSES),
+});
+
+export type BookingStatusUpdate = z.infer<typeof bookingStatusUpdateSchema>;
 
 // ============================================
 // TODO Session 7+ — Service CRUD

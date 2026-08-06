@@ -5,13 +5,26 @@
  * Business logic layer — no HTTP concerns.
  */
 
-import { and, eq } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  like,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { bookings, services } from "@/lib/db/schema";
 import type { Booking } from "@/lib/db/schema";
 import { bangkokDateTimeToUtc } from "@/lib/datetime";
 import { hasBookingConflict } from "./availability";
 import { generateBookingCode } from "@/lib/nanoid";
+import type { AdminBookingFilter } from "@/lib/validations";
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -211,10 +224,204 @@ function isUniqueViolation(err: unknown): boolean {
   return err.message.includes("UNIQUE constraint failed");
 }
 
-// ============================================
-// TODO Session 6B — Admin queries
-// ============================================
-// TODO: getBookingsWithFilter({dateRange, status, serviceId, search}, {page, pageSize})
-// TODO: getBookingStats() — today / week / month counts + revenue sum
-// TODO: getRecentBookings(limit: number)
-// TODO: updateBookingStatus(id: number, status: BookingStatus)
+// ─────────────────────────────────────────────────────────────
+// Admin queries
+// ─────────────────────────────────────────────────────────────
+
+const BOOKING_STATUS_VALUES = [
+  "pending",
+  "confirmed",
+  "completed",
+  "cancelled",
+  "no-show",
+] as const;
+
+export type BookingStatus = (typeof BOOKING_STATUS_VALUES)[number];
+
+export interface AdminBookingListItem {
+  id: number;
+  code: string;
+  customerName: string;
+  customerPhone: string;
+  serviceId: number;
+  serviceName: string;
+  startsAt: Date;
+  endsAt: Date;
+  durationMin: number;
+  price: number;
+  status: BookingStatus;
+  notes: string | null;
+  createdAt: Date;
+}
+
+export interface AdminBookingListResult {
+  bookings: AdminBookingListItem[];
+  meta: {
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+  };
+}
+
+/**
+ * List bookings with filter + pagination.
+ * All filters combinable — empty filter returns all bookings.
+ *
+ * Search: matches customerName / customerPhone / code (case-insensitive LIKE).
+ * Date range: inclusive (dateFrom 00:00 → dateTo 23:59:59, Bangkok).
+ */
+export async function getBookingsWithFilter(
+  filter: AdminBookingFilter,
+): Promise<AdminBookingListResult> {
+  const db = await getDb();
+
+  // ─── Build WHERE conditions ───────────────────────────────
+  const conditions = [];
+
+  // Date range → convert Bangkok string to UTC boundaries
+  if (filter.dateFrom) {
+    const from = bangkokDateTimeToUtc(filter.dateFrom, "00:00");
+    conditions.push(gte(bookings.startsAt, from));
+  }
+  if (filter.dateTo) {
+    const to = bangkokDateTimeToUtc(filter.dateTo, "23:59");
+    conditions.push(lte(bookings.startsAt, to));
+  }
+
+  // Status multi-select
+  if (filter.status && filter.status.length > 0) {
+    conditions.push(inArray(bookings.status, filter.status));
+  }
+
+  // Service filter
+  if (filter.serviceId) {
+    conditions.push(eq(bookings.serviceId, filter.serviceId));
+  }
+
+  // Search: name OR phone OR code (case-insensitive)
+  if (filter.search) {
+    const pattern = `%${filter.search}%`;
+    conditions.push(
+      or(
+        like(bookings.customerName, pattern),
+        like(bookings.customerPhone, pattern),
+        like(bookings.code, pattern),
+      )!,
+    );
+  }
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  // ─── Count total (for pagination meta) ────────────────────
+  const [countRow] = await db
+    .select({ total: count() })
+    .from(bookings)
+    .where(whereClause);
+
+  const total = countRow?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / filter.pageSize));
+
+  // ─── Query paginated data + join service name ─────────────
+  const rows = await db
+    .select({
+      id: bookings.id,
+      code: bookings.code,
+      customerName: bookings.customerName,
+      customerPhone: bookings.customerPhone,
+      serviceId: bookings.serviceId,
+      serviceName: services.name,
+      startsAt: bookings.startsAt,
+      endsAt: bookings.endsAt,
+      durationMin: bookings.durationMin,
+      price: bookings.price,
+      status: bookings.status,
+      notes: bookings.notes,
+      createdAt: bookings.createdAt,
+    })
+    .from(bookings)
+    .leftJoin(services, eq(bookings.serviceId, services.id))
+    .where(whereClause)
+    .orderBy(asc(bookings.startsAt))
+    .limit(filter.pageSize)
+    .offset((filter.page - 1) * filter.pageSize);
+
+  const items: AdminBookingListItem[] = rows.map((r) => ({
+    ...r,
+    serviceName: r.serviceName ?? "(บริการที่ถูกลบ)",
+    status: r.status as BookingStatus,
+  }));
+
+  return {
+    bookings: items,
+    meta: {
+      total,
+      page: filter.page,
+      pageSize: filter.pageSize,
+      totalPages,
+    },
+  };
+}
+
+/**
+ * Fetch single booking by numeric id — for admin detail view.
+ * Returns null if not found.
+ */
+export async function getBookingById(
+  id: number,
+): Promise<AdminBookingListItem | null> {
+  const db = await getDb();
+
+  const [row] = await db
+    .select({
+      id: bookings.id,
+      code: bookings.code,
+      customerName: bookings.customerName,
+      customerPhone: bookings.customerPhone,
+      serviceId: bookings.serviceId,
+      serviceName: services.name,
+      startsAt: bookings.startsAt,
+      endsAt: bookings.endsAt,
+      durationMin: bookings.durationMin,
+      price: bookings.price,
+      status: bookings.status,
+      notes: bookings.notes,
+      createdAt: bookings.createdAt,
+    })
+    .from(bookings)
+    .leftJoin(services, eq(bookings.serviceId, services.id))
+    .where(eq(bookings.id, id))
+    .limit(1);
+
+  if (!row) return null;
+
+  return {
+    ...row,
+    serviceName: row.serviceName ?? "(บริการที่ถูกลบ)",
+    status: row.status as BookingStatus,
+  };
+}
+
+/**
+ * Update booking status.
+ * MVP: free change — no state machine enforcement.
+ *
+ * @returns updated booking or null if not found
+ */
+export async function updateBookingStatus(
+  id: number,
+  status: BookingStatus,
+): Promise<AdminBookingListItem | null> {
+  const db = await getDb();
+
+  const [updated] = await db
+    .update(bookings)
+    .set({ status })
+    .where(eq(bookings.id, id))
+    .returning();
+
+  if (!updated) return null;
+
+  // Re-fetch with joined service name for consistent return shape
+  return getBookingById(id);
+}
