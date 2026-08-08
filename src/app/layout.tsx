@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Noto_Serif_Thai, IBM_Plex_Sans_Thai } from "next/font/google";
 import "./globals.css";
+import { cn } from "@/lib/utils";
 
 const serifThai = Noto_Serif_Thai({
   variable: "--font-serif-thai",
@@ -10,9 +11,9 @@ const serifThai = Noto_Serif_Thai({
 });
 
 const sansThai = IBM_Plex_Sans_Thai({
-  variable: "--font-sans-thai",
+  variable: "--font-sans",
   subsets: ["thai", "latin"],
-  weight: ["400", "500", "600"],
+  weight: ["400", "500", "600", "700"],
   display: "swap",
 });
 
@@ -32,7 +33,13 @@ export default function RootLayout({
   return (
     <html
       lang="th"
-      className={`${serifThai.variable} ${sansThai.variable} h-full antialiased`}
+      className={cn(
+        "h-full",
+        "antialiased",
+        serifThai.variable,
+        sansThai.variable,
+        "font-sans",
+      )}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
