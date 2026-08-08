@@ -14,6 +14,7 @@ import {
   gte,
   inArray,
   like,
+  lt,
   lte,
   or,
   sql,
@@ -21,10 +22,19 @@ import {
 import { getDb } from "@/lib/db";
 import { bookings, services } from "@/lib/db/schema";
 import type { Booking } from "@/lib/db/schema";
-import { bangkokDateTimeToUtc } from "@/lib/datetime";
+import {
+  bangkokDateTimeToUtc,
+  getBangkokDayRange,
+  getBangkokWeekRange,
+  getBangkokMonthRange,
+  BANGKOK_TZ,
+} from "@/lib/datetime";
 import { hasBookingConflict } from "./availability";
 import { generateBookingCode } from "@/lib/nanoid";
 import type { AdminBookingFilter } from "@/lib/validations";
+import { start } from "repl";
+import { number } from "zod";
+import { formatInTimeZone } from "date-fns-tz";
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -424,4 +434,180 @@ export async function updateBookingStatus(
 
   // Re-fetch with joined service name for consistent return shape
   return getBookingById(id);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Dashboard stats
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Statuses ที่นับเป็น "รายได้คาดการณ์" — exclude cancelled + no-show.
+ * confirmed = จองแล้ว, completed = รับบริการเสร็จ
+ * label ใน UI: "รายได้คาดการณ์" (ไม่ใช่ "รายได้จริง")
+ */
+const REVENUE_STATUSES: BookingStatus[] = ["confirmed", "completed"];
+
+export interface BookingStats {
+  today: {
+    count: number;
+    revenue: number;
+    upcommingCount: number; // confirmed + startsAt > now (in today range)
+  };
+  week: { count: number; revenue: number };
+  month: { count: number; revenue: number };
+}
+
+/**
+ * Aggregate booking stats for admin dashboard.
+ *
+ * - count/revenue: bookings with status IN (confirmed, completed) within [start, end)
+ * - upcomingCount: today's confirmed bookings with startsAt still in the future
+ *
+ * Ranges align to Bangkok calendar (day/week/month).
+ * Week = Monday-Sunday (ISO 8601).
+ *
+ * All queries run in parallel via Promise.all.
+ */
+export async function getBookingStats(): Promise<BookingStats> {
+  const db = await getDb();
+  const now = new Date();
+
+  const todayRange = getBangkokDayRange(now);
+  const weekRange = getBangkokWeekRange(now);
+  const monthRange = getBangkokMonthRange(now);
+
+  // Closure over db — reused in 4 parallel queries
+  const aggregateInRange = (start: Date, end: Date) =>
+    db
+      .select({
+        count: sql<number>`COUNT(*)`.as("count"),
+        revenue: sql<number>`COALESCE(SUM(${bookings.price}), 0)`.as("revenue"),
+      })
+      .from(bookings)
+      .where(
+        and(
+          inArray(bookings.status, REVENUE_STATUSES),
+          gte(bookings.startsAt, start),
+          lt(bookings.startsAt, end),
+        ),
+      )
+      .then((rows) => ({
+        count: Number(rows[0]?.count ?? 0),
+        revenue: Number(rows[0]?.revenue ?? 0),
+      }));
+
+  const [todayAgg, weekAgg, monthAgg, upcomingRows] = await Promise.all([
+    aggregateInRange(todayRange.start, todayRange.end),
+    aggregateInRange(weekRange.start, weekRange.end),
+    aggregateInRange(monthRange.start, weekRange.end),
+    db
+      .select({ count: sql<number>`COUNT(*)`.as("count") })
+      .from(bookings)
+      .where(
+        and(
+          eq(bookings.status, "confirmed"),
+          gte(bookings.startsAt, now),
+          lt(bookings.startsAt, todayRange.end),
+        ),
+      ),
+  ]);
+
+  return {
+    today: {
+      count: todayAgg.count,
+      revenue: todayAgg.revenue,
+      upcommingCount: Number(upcomingRows[0]?.count ?? 0),
+    },
+    week: weekAgg,
+    month: monthAgg,
+  };
+}
+
+/**
+ * Fetch N most-recently-created bookings — for dashboard "recent activity" widget.
+ * Sort by createdAt DESC (newest first).
+ *
+ * Note: sort key = createdAt (จองล่าสุด) ไม่ใช่ startsAt (บริการล่าสุด/ถัดไป).
+ * ถ้าอยาก "upcoming" ใช้ getBookingsWithFilter สั่ง sort startsAt asc + status filter
+ */
+export async function getRecentBookings(
+  limit: number = 5,
+): Promise<AdminBookingListItem[]> {
+  const db = await getDb();
+
+  const rows = await db
+    .select({
+      id: bookings.id,
+      code: bookings.code,
+      customerName: bookings.customerName,
+      customerPhone: bookings.customerPhone,
+      serviceId: bookings.serviceId,
+      serviceName: services.name,
+      startsAt: bookings.startsAt,
+      endsAt: bookings.endsAt,
+      durationMin: bookings.durationMin,
+      price: bookings.price,
+      status: bookings.status,
+      notes: bookings.notes,
+      createdAt: bookings.createdAt,
+    })
+    .from(bookings)
+    .leftJoin(services, eq(bookings.serviceId, services.id))
+    .orderBy(desc(bookings.createdAt))
+    .limit(limit);
+
+  return rows.map((r) => ({
+    ...r,
+    serviceName: r.serviceName ?? "(บริการที่ถูกลบ)",
+    status: r.status as BookingStatus,
+  }));
+}
+
+// ─────────────────────────────────────────────────────────────
+// Calendar helpers
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Return set of Bangkok date strings (YYYY-MM-DD) ที่มี booking ในเดือนที่ระบุ.
+ * ใช้กับ Calendar dots — react-day-picker modifiers รับ Date[] แต่ Set<string>
+ * comparison เร็วกว่า + serialize ง่ายกว่าถ้าส่ง client
+ *
+ * @param year - 4-digit year, Bangkok calendar
+ * @param month - 1-12 (JS convention: Date.getMonth() = 0-11, ตรงนี้ 1-indexed)
+ * @returns Set<"YYYY-MM-DD"> — dates ที่มี booking status = confirmed/completed
+ */
+export async function getBookedDatesInMonth(
+  year: number,
+  month: number, //1-12
+): Promise<Set<string>> {
+  const db = await getDb();
+
+  // Bangkok month range [1st 00:00, 1st next 00:00)
+  // ใช้ getBangkokMonthRange แต่ต้อง feed date ที่อยู่ในเดือนที่ต้องการ
+  // Construct via Bangkok "YYYY-MM-01" → UTC ก่อนใช้เป็น anchor
+  const anchor = bangkokDateTimeToUtc(
+    `${year}-${String(month).padStart(2, "0")}-01`,
+    "00:00",
+  );
+  const range = getBangkokMonthRange(anchor);
+
+  const rows = await db
+    .select({
+      startsAt: bookings.startsAt,
+    })
+    .from(bookings)
+    .where(
+      and(
+        inArray(bookings.status, REVENUE_STATUSES),
+        gte(bookings.startsAt, range.start),
+        lt(bookings.startsAt, range.end),
+      ),
+    );
+
+  // Convert each UTC Date → Bangkok "YYYY-MM-DD"
+  const dates = new Set<string>();
+  for (const row of rows) {
+    dates.add(formatInTimeZone(row.startsAt, BANGKOK_TZ, "yyyy-MM-dd"));
+  }
+  return dates;
 }

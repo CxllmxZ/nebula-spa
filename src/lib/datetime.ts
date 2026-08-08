@@ -1,5 +1,14 @@
 import { formatInTimeZone, fromZonedTime, toZonedTime } from "date-fns-tz";
-import { getDay, format } from "date-fns";
+import {
+  getDay,
+  format,
+  startOfDay,
+  startOfWeek,
+  startOfMonth,
+  addDays,
+  addWeeks,
+  addMonths,
+} from "date-fns";
 
 /**
  * Bangkok timezone name (IANA).
@@ -113,4 +122,54 @@ export function addMinutesToTime(time: string, minutes: number): string {
  */
 export function isTimeBeforeOrEqual(a: string, b: string): boolean {
   return a <= b; // string comparison ก็ใช้ได้เพราะ "HH:MM" zero-padded
+}
+
+/**
+ * Half-open date range [start, end) — end exclusive.
+ * ใช้กับ Drizzle: gte(col, start) && lt(col, end)
+ */
+export interface DateRange {
+  start: Date;
+  end: Date;
+}
+
+/**
+ * "วันนี้" ตาม Bangkok calendar → [00:00, 24:00) local
+ *
+ * @example
+ * ตอน 14:00 Bangkok วันที่ 15 ส.ค. → { start: 15-08 17:00 UTC, end: 16-08 17:00 UTC }
+ *   (Bangkok = UTC+7 → 15-08 00:00 BKK = 14-08 17:00 UTC ... wait ผิด)
+ *   correct: 15-08 00:00 BKK = 14-08 17:00 UTC, 16-08 00:00 BKK = 15-08 17:00 UTC
+ */
+export function getBangkokDayRange(now: Date = new Date()): DateRange {
+  const bkkView = toZonedTime(now, BANGKOK_TZ);
+  const localStart = startOfDay(bkkView);
+  return {
+    start: fromZonedTime(localStart, BANGKOK_TZ),
+    end: fromZonedTime(addDays(localStart, 1), BANGKOK_TZ),
+  };
+}
+
+/**
+ * "สัปดาห์นี้" — จันทร์ 00:00 → จันทร์หน้า 00:00 Bangkok (ISO 8601 week)
+ */
+export function getBangkokWeekRange(now: Date = new Date()): DateRange {
+  const bkkView = toZonedTime(now, BANGKOK_TZ);
+  const localStart = startOfWeek(bkkView, { weekStartsOn: 1 });
+  return {
+    start: fromZonedTime(localStart, BANGKOK_TZ),
+    end: fromZonedTime(addWeeks(localStart, 1), BANGKOK_TZ),
+  };
+}
+
+/**
+ * "เดือนนี้" — 1st 00:00 → 1st เดือนหน้า 00:00 Bangkok
+ */
+export function getBangkokMonthRange(now: Date = new Date()): DateRange {
+  const bkkView = toZonedTime(now, BANGKOK_TZ);
+  const localStart = startOfMonth(bkkView);
+  return {
+    start: fromZonedTime(localStart, BANGKOK_TZ),
+    end: fromZonedTime(addMonths(localStart, 1), BANGKOK_TZ),
+  };
 }
