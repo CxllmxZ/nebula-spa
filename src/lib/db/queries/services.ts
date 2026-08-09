@@ -1,23 +1,22 @@
 /**
- * Service queries
- *
- * All DB access related to services table.
- * Used by public routes (list active services) and admin CRUD actions.
+ * Service queries.
+ * Business logic layer — no HTTP concerns.
  */
 
-// ============================================
-// Public queries
-// ============================================
-// TODO: getActiveServices() — SELECT WHERE is_active = true, ORDER BY display_order
-// TODO: getServiceById(id: number) — for booking flow
+import { asc, eq } from "drizzle-orm";
+import { getDb } from "@/lib/db";
+import { services } from "@/lib/db/schema";
+import type { Service } from "@/lib/db/schema";
 
-// ============================================
-// Admin queries (auth required at caller)
-// ============================================
-// TODO: getAllServices() — including inactive
-// TODO: createService(input: NewService)
-// TODO: updateService(id: number, input: Partial<NewService>)
-// TODO: toggleServiceActive(id: number) — soft delete via is_active flag
-// TODO: reorderServices(orderedIds: number[]) — update display_order
-
-export {};
+/**
+ * Fetch active services — for filter dropdowns, booking form.
+ * Sort by name for stable UX (SELECT order should be deterministic).
+ */
+export async function getActiveServices(): Promise<Service[]> {
+  const db = await getDb();
+  return db
+    .select()
+    .from(services)
+    .where(eq(services.isActive, true))
+    .orderBy(asc(services.name));
+}

@@ -20,7 +20,8 @@ export function DashboardCalendar({ bookedDates }: DashboardCalendarProps) {
     if (!date) return;
     setSelected(date);
     const dateStr = format(date, "yyyy-MM-dd");
-    router.push(`/admin/bookings?date=${dateStr}`);
+    // Single-day filter = from and to = same date
+    router.push(`/admin/bookings?dateFrom=${dateStr}&dateTo=${dateStr}`);
   }
 
   return (

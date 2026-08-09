@@ -1,5 +1,6 @@
 import { toZonedTime } from "date-fns-tz";
 import { getMonth, getYear, subMonths, addMonths } from "date-fns";
+import Link from "next/link";
 
 import {
   getBookedDatesInMonth,
@@ -122,6 +123,14 @@ export default async function AdminDashboardPage() {
           </CardHeader>
           <CardContent>
             <RecentBookings bookings={recentBookings} />
+            <div className="mt-4 border-t pt-3 text-center">
+              <Link
+                href="/admin/bookings"
+                className="text-sm text-primary hover:underline"
+              >
+                ดูการจองทั้งหมด →
+              </Link>
+            </div>
           </CardContent>
         </Card>
       </div>
