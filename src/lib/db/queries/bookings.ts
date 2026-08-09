@@ -451,7 +451,7 @@ export interface BookingStats {
   today: {
     count: number;
     revenue: number;
-    upcommingCount: number; // confirmed + startsAt > now (in today range)
+    upcomingCount: number; // confirmed + startsAt > now (in today range)
   };
   week: { count: number; revenue: number };
   month: { count: number; revenue: number };
@@ -516,7 +516,7 @@ export async function getBookingStats(): Promise<BookingStats> {
     today: {
       count: todayAgg.count,
       revenue: todayAgg.revenue,
-      upcommingCount: Number(upcomingRows[0]?.count ?? 0),
+      upcomingCount: Number(upcomingRows[0]?.count ?? 0),
     },
     week: weekAgg,
     month: monthAgg,
