@@ -107,17 +107,162 @@ export const bookingStatusUpdateSchema = z.object({
 export type BookingStatusUpdate = z.infer<typeof bookingStatusUpdateSchema>;
 
 // ============================================
-// TODO Session 7+ — Service CRUD
+// Service CRUD (admin)
 // ============================================
-// export const serviceCreateSchema = z.object({...});
-// export const serviceUpdateSchema = z.object({...});
+
+/**
+ * POST /api/admin/services — create new service.
+ */
+export const serviceCreateSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "กรุณากรอกชื่อบริการ")
+    .max(100, "ชื่อยาวเกินไป"),
+  description: z
+    .string()
+    .trim()
+    .max(500, "คำอธิบายยาวเกินไป")
+    .nullish()
+    .transform((v) => (v && v.length > 0 ? v : null)),
+  durationMin: z
+    .number()
+    .int("ระยะเวลาต้องเป็นจำนวนเต็ม")
+    .min(15, "ระยะเวลาอย่างน้อย 15 นาที")
+    .max(240, "ระยะเวลาไม่เกิน 240 นาที"),
+  price: z.number().int("ราคาต้องเป็นจำนวนเต็ม").min(1, "ราคาต้องมากกว่า 0"),
+  isActive: z.boolean().default(true),
+});
+
+export type ServiceCreateInput = z.infer<typeof serviceCreateSchema>;
+
+/**
+ * PATCH /api/admin/services/[id] — partial update.
+ * All fields optional; providing at least one required (enforced in route).
+ */
+export const serviceUpdateSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "กรุณากรอกชื่อบริการ")
+    .max(100, "ชื่อยาวเกินไป")
+    .optional(),
+  description: z
+    .string()
+    .trim()
+    .max(500, "คำอธิบายยาวเกินไป")
+    .nullish() // ← เปลี่ยนจาก .optional() เป็น .nullish() (undefined | null | string)
+    .transform((v) => {
+      if (v === undefined) return undefined;
+      if (v === null) return null;
+      return v.length > 0 ? v : null;
+    }),
+  durationMin: z
+    .number()
+    .int()
+    .min(15, "ระยะเวลาอย่างน้อย 15 นาที")
+    .max(240, "ระยะเวลาไม่เกิน 240 นาที")
+    .optional(),
+  price: z.number().int().min(1, "ราคาต้องมากกว่า 0").optional(),
+  isActive: z.boolean().optional(),
+  displayOrder: z.number().int().min(0).optional(),
+});
+
+export type ServiceUpdateInput = z.infer<typeof serviceUpdateSchema>;
 
 // ============================================
-// TODO Session 7+ — Business hours
+// Business hours (admin)
 // ============================================
-// export const businessHoursUpdateSchema = z.object({...});
+
+/**
+ * PUT /api/admin/hours — replace all 7 rows.
+ *
+ * Client sends 7 rows array covering dayOfWeek 0-6.
+ * If isClosed=true, openTime/closeTime can be null or ignored.
+ * If isClosed=false, both times required + openTime < closeTime.
+ */
+export const businessHourRowSchema = z
+  .object({
+    dayOfWeek: z.number().int().min(0).max(6),
+    openTime: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "รูปแบบเวลาไม่ถูกต้อง (HH:MM)")
+      .nullish(),
+    closeTime: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "รูปแบบเวลาไม่ถูกต้อง (HH:MM)")
+      .nullish(),
+    isClosed: z.boolean(),
+  })
+  .refine((r) => r.isClosed || (r.openTime && r.closeTime), {
+    message: "กรุณาระบุเวลาเปิดและปิด (หรือติ๊กว่า 'ปิด')",
+  })
+  .refine(
+    (r) =>
+      r.isClosed || !r.openTime || !r.closeTime || r.openTime < r.closeTime,
+    { message: "เวลาเปิดต้องก่อนเวลาปิด" },
+  );
+
+export const businessHoursUpdateSchema = z
+  .object({
+    hours: z.array(businessHourRowSchema).length(7, "ต้องส่งครบ 7 วัน"),
+  })
+  .refine(
+    (data) => {
+      const days = new Set(data.hours.map((h) => h.dayOfWeek));
+      return days.size === 7;
+    },
+    { message: "dayOfWeek ต้องครบ 0-6 ไม่ซ้ำ" },
+  );
+
+export type BusinessHoursUpdateInput = z.infer<
+  typeof businessHoursUpdateSchema
+>;
 
 // ============================================
-// TODO Session 7+ — Blocked slots
+// Blocked slots (admin)
 // ============================================
-// export const blockedSlotCreateSchema = z.object({...});
+
+/**
+ * POST /api/admin/blocked-slots — create one-off block.
+ *
+ * Client sends Bangkok date + start/end times.
+ * Backend converts to UTC via bangkokDateTimeToUtc before insert.
+ */
+export const blockedSlotCreateSchema = z
+  .object({
+    date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "รูปแบบวันที่ไม่ถูกต้อง (YYYY-MM-DD)"),
+    startTime: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "รูปแบบเวลาไม่ถูกต้อง (HH:MM)"),
+    endTime: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "รูปแบบเวลาไม่ถูกต้อง (HH:MM)"),
+    reason: z
+      .string()
+      .trim()
+      .max(200, "เหตุผลยาวเกินไป")
+      .nullish()
+      .transform((v) => (v && v.length > 0 ? v : null)),
+  })
+  .refine((d) => d.startTime < d.endTime, {
+    message: "เวลาเริ่มต้องก่อนเวลาสิ้นสุด",
+    path: ["endTime"],
+  })
+  .refine(
+    (d) => {
+      // Reject past dates (past = strictly before today Bangkok calendar)
+      const todayBkk = new Date().toLocaleDateString("en-CA", {
+        timeZone: "Asia/Bangkok",
+      });
+      return d.date >= todayBkk;
+    },
+    {
+      message: "ไม่สามารถเพิ่มวันหยุดในอดีตได้",
+      path: ["date"],
+    },
+  );
+
+export type BlockedSlotCreateInput = z.infer<typeof blockedSlotCreateSchema>;
