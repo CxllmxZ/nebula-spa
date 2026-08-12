@@ -220,6 +220,40 @@ export type BusinessHoursUpdateInput = z.infer<
 >;
 
 // ============================================
+// User management (admin only)
+// ============================================
+
+const USER_ROLES = ["admin", "staff", "manager"] as const;
+
+/**
+ * POST /api/admin/users — admin creates staff account.
+ *
+ * Password chosen by admin, communicated to staff out-of-band (LINE/phone).
+ * MVP: no email delivery + no self-signup for admin-created accounts.
+ */
+export const userCreateSchema = z.object({
+  email: z.string().trim().toLowerCase().email("รูปแบบอีเมลไม่ถูกต้อง"),
+  name: z.string().trim().min(1, "กรุณากรอกชื่อ").max(100, "ชื่อยาวเกินไป"),
+  password: z
+    .string()
+    .min(8, "รหัสผ่านอย่างน้อย 8 ตัวอักษร")
+    .max(100, "รหัสผ่านยาวเกินไป"),
+  role: z.enum(USER_ROLES).default("staff"),
+});
+
+export type UserCreateInput = z.infer<typeof userCreateSchema>;
+
+/**
+ * PATCH /api/admin/users/[id] — role change only.
+ * MVP: no name/email edit (defer post-MVP).
+ */
+export const userRoleUpdateSchema = z.object({
+  role: z.enum(USER_ROLES),
+});
+
+export type UserRoleUpdate = z.infer<typeof userRoleUpdateSchema>;
+
+// ============================================
 // Blocked slots (admin)
 // ============================================
 

@@ -91,3 +91,11 @@ export async function requireRoleAction(allowed: AllowedRole[]) {
 }
 
 export { AuthError };
+
+/**
+ * Extract current user id from session — used by admin guards
+ * (prevent self-delete, self-demote).
+ */
+export function getSessionUserId(session: { user: { id: string } }): string {
+  return session.user.id;
+}

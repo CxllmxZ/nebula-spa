@@ -11,22 +11,29 @@ import { getUpcomingBlockedSlots } from "@/lib/db/queries/blocked-slots";
 import { toBangkokIsoString } from "@/lib/datetime";
 import { BlockedSlotsManager } from "@/components/admin/blocked-slots-manager";
 
+import { getAllUsers } from "@/lib/db/queries/users";
+import { UsersManager } from "@/components/admin/ีusers-manager";
+import { requireRoleAction } from "@/lib/auth-guard";
+
 interface PageProps {
   searchParams: Promise<{ tab?: string }>;
 }
 
 export default async function SettingsPage({ searchParams }: PageProps) {
+  const session = await requireRoleAction(["admin", "staff"]);
+  const currentUserRole = (session.user as { role?: string }).role ?? "staff";
+  const isAdmin = currentUserRole === "admin";
+
   const { tab } = await searchParams;
   const defaultTab = tab ?? "services";
 
-  // Parallel fetch — hours/blocked-slots ทำใน 7F, ตอนนี้ services เท่านั้น
-  const [services, hours, blockedSlotsRaw] = await Promise.all([
+  const [services, hours, blockedSlotsRaw, users] = await Promise.all([
     getAllServices(),
     getAllHours(),
     getUpcomingBlockedSlots(),
+    isAdmin ? getAllUsers() : Promise.resolve([]),
   ]);
 
-  // Serialize Date → Bangkok ISO for client component (matches API response shape)
   const blockedSlots = blockedSlotsRaw.map((s) => ({
     id: s.id,
     startsAt: toBangkokIsoString(s.startsAt),
@@ -35,23 +42,21 @@ export default async function SettingsPage({ searchParams }: PageProps) {
     createdAt: toBangkokIsoString(s.createdAt),
   }));
 
+  // Serialize users createdAt to ISO for client
+  const usersDTO = users.map((u) => ({
+    ...u,
+    createdAt: u.createdAt.toISOString(),
+  }));
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       {/* Header */}
-      <div className="space-y-2">
-        <Link
-          href="/admin"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          กลับแดชบอร์ด
-        </Link>
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">ตั้งค่า</h1>
-          <p className="text-muted-foreground">
-            จัดการบริการ เวลาทำการ และวันหยุด
-          </p>
-        </div>
+      <div>
+        <h1 className="text-3xl font-semibold tracking-tight">ตั้งค่า</h1>
+        <p className="text-muted-foreground">
+          จัดการบริการ เวลาทำการ และวันหยุด
+          {isAdmin && " · ทีมงาน"}
+        </p>
       </div>
 
       {/* Tabs */}
@@ -60,6 +65,7 @@ export default async function SettingsPage({ searchParams }: PageProps) {
           <TabsTrigger value="services">บริการ</TabsTrigger>
           <TabsTrigger value="hours">เวลาทำการ</TabsTrigger>
           <TabsTrigger value="blocked">วันหยุด</TabsTrigger>
+          {isAdmin && <TabsTrigger value="team">ทีมงาน</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="services">
@@ -73,6 +79,15 @@ export default async function SettingsPage({ searchParams }: PageProps) {
         <TabsContent value="blocked">
           <BlockedSlotsManager initialSlots={blockedSlots} />
         </TabsContent>
+
+        {isAdmin && (
+          <TabsContent value="team">
+            <UsersManager
+              initialUsers={usersDTO}
+              currentUserId={session.user.id}
+            />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
