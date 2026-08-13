@@ -13,7 +13,7 @@ const serifThai = Noto_Serif_Thai({
 const sansThai = IBM_Plex_Sans_Thai({
   variable: "--font-sans",
   subsets: ["thai", "latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["300", "400", "500", "600", "700"],
   display: "swap",
 });
 
