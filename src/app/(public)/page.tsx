@@ -1,12 +1,20 @@
-export default function HomePage() {
+import { getActiveServices } from "@/lib/db/queries/services"; // ← ปรับ path ถ้าต่าง
+import { HeroSection } from "./_components/hero-section";
+import { ServicesGrid } from "./_components/services-grid";
+import { AboutSection } from "./_components/about-section";
+import { FooterCta } from "./_components/footer-cta";
+import { VisitSection } from "./_components/visit-section";
+
+export default async function PublicHome() {
+  const services = await getActiveServices();
+
   return (
-    <main className="flex min-h-screen items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-4xl font-semibold">Nebula Spa</h1>
-        <p className="mt-2 text-sm text-gray-500">
-          Coming soon — booking system in progress
-        </p>
-      </div>
-    </main>
+    <>
+      <HeroSection />
+      <ServicesGrid services={services} />
+      <AboutSection />
+      <VisitSection />
+      <FooterCta />
+    </>
   );
 }

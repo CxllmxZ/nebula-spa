@@ -1,16 +1,16 @@
 import type { Metadata } from "next";
-import { Noto_Serif_Thai, IBM_Plex_Sans_Thai } from "next/font/google";
+import { Noto_Serif_Thai, Bai_Jamjuree } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 
 const serifThai = Noto_Serif_Thai({
   variable: "--font-serif-thai",
   subsets: ["thai", "latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["300", "400", "500", "600", "700"],
   display: "swap",
 });
 
-const sansThai = IBM_Plex_Sans_Thai({
+const sansThai = Bai_Jamjuree({
   variable: "--font-sans",
   subsets: ["thai", "latin"],
   weight: ["300", "400", "500", "600", "700"],
