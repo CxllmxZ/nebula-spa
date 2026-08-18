@@ -163,3 +163,13 @@
       0 0 36px rgba(201, 169, 97, 0.2);
   }
 }
+
+.cosmic input:-webkit-autofill,
+.cosmic input:-webkit-autofill:hover,
+.cosmic input:-webkit-autofill:focus,
+.cosmic input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 100px oklch(0.95 0.01 90) inset;
+  -webkit-text-fill-color: oklch(0.2 0.03 280);
+  caret-color: oklch(0.2 0.03 280);
+  transition: background-color 5000s ease-in-out 0s;
+}

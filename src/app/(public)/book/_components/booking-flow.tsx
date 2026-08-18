@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { StepSection } from "./step-section";
 import { ServicePicker } from "./service-picker";
 import { DatePickerStep } from "./date-picker-step";
 import { TimePicker } from "./time-picker";
+import { CustomerForm } from "@/app/(public)/book/_components/customer-form";
 
 type Service = {
   id: number;
@@ -69,19 +69,8 @@ export function BookingFlow({ services, preselectedServiceId }: Props) {
       .finally(() => setLoading(false));
   }, [serviceId, date]);
 
-  const canContinue = Boolean(serviceId && date && time);
-
-  const handleContinue = () => {
-    if (!canContinue) return;
-    // 8D จะทำต่อ — เก็บ state ไว้ก่อน
-    console.log("→ 8D form step", { serviceId, date, time });
-    alert(
-      `ต่อไป 8D form step\nService: ${selectedService?.name}\nDate: ${date}\nTime: ${time}`,
-    );
-  };
-
   return (
-    <div className="space-y-6 pb-32">
+    <div className="space-y-6">
       {/* 01 Service */}
       <StepSection
         number="01"
@@ -151,29 +140,23 @@ export function BookingFlow({ services, preselectedServiceId }: Props) {
         )}
       </StepSection>
 
-      {/* Sticky Continue */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-primary/10 bg-background/90 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-[clamp(1.5rem,5vw,6rem)] py-4">
-          <div className="hidden text-xs tracking-widest text-foreground/60 sm:block">
-            {canContinue ? (
-              <span>
-                {selectedService?.name} · {date && formatThaiDate(date)} ·{" "}
-                {time} น.
-              </span>
-            ) : (
-              <span>เลือกให้ครบ 3 ขั้นตอน</span>
-            )}
-          </div>
-          <Button
-            onClick={handleContinue}
-            disabled={!canContinue}
-            size="lg"
-            className="ml-auto rounded-full px-8 py-6 text-sm tracking-[0.14em]"
-          >
-            ยืนยันต่อ →
-          </Button>
-        </div>
-      </div>
+      {/* 04 Customer info */}
+      <StepSection
+        number="04"
+        title="ข้อมูลผู้จอง"
+        status={!time || !date || !serviceId ? "locked" : "active"}
+      >
+        {serviceId && date && time && selectedService && (
+          <CustomerForm
+            booking={{
+              serviceId,
+              date,
+              startTime: time,
+            }}
+            summary={`${selectedService.name} · ${formatThaiDate(date)} · ${time} น.`}
+          />
+        )}
+      </StepSection>
     </div>
   );
 }
