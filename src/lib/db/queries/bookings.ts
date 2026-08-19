@@ -352,7 +352,7 @@ export async function getBookingsWithFilter(
     .from(bookings)
     .leftJoin(services, eq(bookings.serviceId, services.id))
     .where(whereClause)
-    .orderBy(asc(bookings.startsAt))
+    .orderBy(desc(bookings.createdAt)) // ← ใหม่: newest booking first
     .limit(filter.pageSize)
     .offset((filter.page - 1) * filter.pageSize);
 

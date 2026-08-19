@@ -26,9 +26,16 @@ export const config = {
 export function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
-  // Skip login page — no auth required
+  // Login page: redirect to dashboard if already authenticated
   if (pathname === "/admin/login") {
-    return NextResponse.next();
+    const sessionCookie = getSessionCookie(request);
+    if (sessionCookie) {
+      return NextResponse.redirect(new URL("/admin", request.url));
+    }
+    // Disable bfcache so back button re-runs auth check
+    const response = NextResponse.next();
+    response.headers.set("Cache-Control", "no-store, must-revalidate");
+    return response;
   }
 
   const sessionCookie = getSessionCookie(request);

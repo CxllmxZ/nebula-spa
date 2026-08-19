@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+export const dynamic = "force-dynamic";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { z } from "zod";
 import { toast } from "sonner";
 
@@ -24,8 +25,7 @@ const loginSchema = z.object({
 
 type FieldErrors = Partial<Record<"email" | "password", string>>;
 
-export default function LoginPage() {
-  const router = useRouter();
+function LoginContent() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/admin";
 
@@ -74,8 +74,8 @@ export default function LoginPage() {
     }
 
     toast.success("เข้าสู่ระบบสำเร็จ");
-    router.push(callbackUrl);
-    router.refresh(); // force middleware re-check with new cookie
+    // Full reload guarantees session cookie is sent with next request
+    window.location.href = callbackUrl;
   }
 
   return (
@@ -133,6 +133,22 @@ export default function LoginPage() {
           </form>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginFallback />}>
+      <LoginContent />
+    </Suspense>
+  );
+}
+
+function LoginFallback() {
+  return (
+    <div className="min-h-[80vh] flex items-center justify-center p-4">
+      <div className="text-sm text-muted-foreground">กำลังโหลด...</div>
     </div>
   );
 }
