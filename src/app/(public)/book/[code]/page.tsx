@@ -3,6 +3,7 @@ import Link from "next/link";
 import { CalendarPlus, Check, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getBookingByCode } from "@/lib/db/queries/bookings";
+import { LineConnectCard } from "@/app/(public)/book/[code]/_components/line-connect-card";
 
 type PageProps = {
   params: Promise<{ code: string }>;
@@ -137,6 +138,8 @@ export default async function ConfirmationPage({ params }: PageProps) {
           </div>
         </dl>
       </div>
+
+      <LineConnectCard />
 
       {/* CTAs */}
       <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:gap-4">
