@@ -49,7 +49,7 @@ export async function requireRole(request: Request, allowed: AllowedRole[]) {
   if (!role || !allowed.includes(role as AllowedRole)) {
     throw new Response(
       JSON.stringify({
-        error: "Forbidden",
+        error: "มีแค่เจ้าของร้านที่เปลี่ยนได้",
         requiredRole: allowed,
       }),
       {

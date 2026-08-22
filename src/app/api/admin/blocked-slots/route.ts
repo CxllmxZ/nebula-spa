@@ -13,7 +13,7 @@ import { bangkokDateTimeToUtc, toBangkokIsoString } from "@/lib/datetime";
  */
 export async function GET(request: Request) {
   try {
-    await requireRole(request, ["admin", "staff"]);
+    await requireRole(request, ["admin"]);
   } catch (err) {
     if (err instanceof Response) return err;
     throw err;

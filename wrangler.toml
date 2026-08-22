@@ -15,3 +15,8 @@ binding = "nebula_spa_db"
 database_name = "nebula-spa-db"
 database_id = "811ec54d-8cbe-494d-bd0b-718363071ad6"
 migrations_dir = "drizzle/migrations"
+
+[vars]
+BETTER_AUTH_URL = "https://nebula-spa.bimav.workers.dev"
+NEXT_PUBLIC_TURNSTILE_SITE_KEY = "0x4AAAAAAEYUSK9NyWXTlUxn"
+LINE_ENABLED = "false"

@@ -12,7 +12,7 @@ type RouteContext = {
  */
 export async function DELETE(request: Request, { params }: RouteContext) {
   try {
-    await requireRole(request, ["admin", "staff"]);
+    await requireRole(request, ["admin"]);
   } catch (err) {
     if (err instanceof Response) return err;
     throw err;

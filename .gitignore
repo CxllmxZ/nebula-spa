@@ -61,3 +61,4 @@ Thumbs.db
 
 # Generated seed SQL
 scripts/seed.sql
+.env.production

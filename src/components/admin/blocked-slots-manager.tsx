@@ -27,9 +27,10 @@ export interface BlockedSlotDTO {
 
 interface Props {
   initialSlots: BlockedSlotDTO[];
+  canEdit?: boolean;
 }
 
-export function BlockedSlotsManager({ initialSlots }: Props) {
+export function BlockedSlotsManager({ initialSlots, canEdit = true }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -72,15 +73,19 @@ export function BlockedSlotsManager({ initialSlots }: Props) {
                 : "ยังไม่มีวันหยุดที่กำหนดไว้"}
             </p>
           </div>
-          <Button onClick={() => setDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            เพิ่มวันหยุด
-          </Button>
+          {canEdit && (
+            <Button onClick={() => setDialogOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              เพิ่มวันหยุด
+            </Button>
+          )}
         </div>
 
         {initialSlots.length === 0 ? (
           <div className="rounded-lg border py-12 text-center text-sm text-muted-foreground">
-            ยังไม่มีวันหยุด — คลิก "เพิ่มวันหยุด" เพื่อกำหนดวันปิดพิเศษ
+            {canEdit
+              ? 'ยังไม่มีวันหยุด — คลิก "เพิ่มวันหยุด" เพื่อกำหนดวันปิดพิเศษ'
+              : "ยังไม่มีวันหยุดที่กำหนดไว้"}
           </div>
         ) : (
           <div className="rounded-md border">
@@ -117,16 +122,18 @@ export function BlockedSlotsManager({ initialSlots }: Props) {
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive hover:text-destructive"
-                          onClick={() => handleDelete(s)}
-                          disabled={isRowPending}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          <span className="sr-only">ลบ</span>
-                        </Button>
+                        {canEdit && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={() => handleDelete(s)}
+                            disabled={isRowPending}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            {canEdit && <span className="sr-only">ลบ</span>}
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   );

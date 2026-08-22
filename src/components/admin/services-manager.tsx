@@ -23,9 +23,10 @@ import { ServiceFormDialog } from "./service-form-dialog";
 
 interface Props {
   initialServices: Service[];
+  isAdmin: boolean;
 }
 
-export function ServicesManager({ initialServices }: Props) {
+export function ServicesManager({ initialServices, isAdmin }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [pendingId, setPendingId] = useState<number | null>(null);
@@ -83,10 +84,12 @@ export function ServicesManager({ initialServices }: Props) {
               {initialServices.filter((s) => s.isActive).length} รายการ
             </p>
           </div>
-          <Button onClick={openCreate}>
-            <Plus className="mr-2 h-4 w-4" />
-            เพิ่มบริการ
-          </Button>
+          {isAdmin && (
+            <Button onClick={openCreate}>
+              <Plus className="mr-2 h-4 w-4" />
+              เพิ่มบริการ
+            </Button>
+          )}
         </div>
 
         {/* Table */}
@@ -103,7 +106,9 @@ export function ServicesManager({ initialServices }: Props) {
                   <TableHead>ระยะเวลา</TableHead>
                   <TableHead className="text-right">ราคา</TableHead>
                   <TableHead>สถานะ</TableHead>
-                  <TableHead className="w-20 text-right">จัดการ</TableHead>
+                  {isAdmin && (
+                    <TableHead className="w-20 text-right">จัดการ</TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -130,11 +135,13 @@ export function ServicesManager({ initialServices }: Props) {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <Switch
-                            checked={s.isActive}
-                            disabled={isRowPending}
-                            onCheckedChange={(next) => toggleActive(s, next)}
-                          />
+                          {isAdmin && (
+                            <Switch
+                              checked={s.isActive}
+                              disabled={isRowPending}
+                              onCheckedChange={(next) => toggleActive(s, next)}
+                            />
+                          )}
                           <Badge
                             variant={s.isActive ? "default" : "outline"}
                             className="text-xs"
@@ -143,18 +150,20 @@ export function ServicesManager({ initialServices }: Props) {
                           </Badge>
                         </div>
                       </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => openEdit(s)}
-                          disabled={isRowPending}
-                        >
-                          <Pencil className="h-4 w-4" />
-                          <span className="sr-only">แก้ไข</span>
-                        </Button>
-                      </TableCell>
+                      {isAdmin && (
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => openEdit(s)}
+                            disabled={isRowPending}
+                          >
+                            <Pencil className="h-4 w-4" />
+                            <span className="sr-only">แก้ไข</span>
+                          </Button>
+                        </TableCell>
+                      )}
                     </TableRow>
                   );
                 })}

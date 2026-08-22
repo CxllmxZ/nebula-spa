@@ -22,6 +22,7 @@ const DAY_LABELS = [
 
 interface Props {
   initialHours: BusinessHour[]; // 7 rows, sorted 0-6
+  canEdit?: boolean; // ← เพิ่ม (default undefined = true สำหรับ backward compat)
 }
 
 interface RowState {
@@ -31,7 +32,7 @@ interface RowState {
   isClosed: boolean;
 }
 
-export function HoursManager({ initialHours }: Props) {
+export function HoursManager({ initialHours, canEdit = true }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [rows, setRows] = useState<RowState[]>(() => toRowState(initialHours));
@@ -99,20 +100,23 @@ export function HoursManager({ initialHours }: Props) {
           <h2 className="text-lg font-semibold">เวลาทำการ</h2>
           <p className="text-sm text-muted-foreground">
             กำหนดเวลาเปิด-ปิด แต่ละวันในสัปดาห์
+            {!canEdit && " · เฉพาะดู"}
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={reset}
-            disabled={!isDirty || isSaving}
-          >
-            ยกเลิก
-          </Button>
-          <Button onClick={handleSave} disabled={!isDirty || isSaving}>
-            {isSaving ? "กำลังบันทึก..." : "บันทึก"}
-          </Button>
-        </div>
+        {canEdit && (
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={reset}
+              disabled={!isDirty || isSaving}
+            >
+              ยกเลิก
+            </Button>
+            <Button onClick={handleSave} disabled={!isDirty || isSaving}>
+              {isSaving ? "กำลังบันทึก..." : "บันทึก"}
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="rounded-md border divide-y">

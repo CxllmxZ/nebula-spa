@@ -69,15 +69,15 @@ export default async function SettingsPage({ searchParams }: PageProps) {
         </TabsList>
 
         <TabsContent value="services">
-          <ServicesManager initialServices={services} />
+          <ServicesManager initialServices={services} isAdmin={isAdmin} />
         </TabsContent>
 
         <TabsContent value="hours">
-          <HoursManager initialHours={hours} />
+          <HoursManager initialHours={hours} canEdit={isAdmin} />
         </TabsContent>
 
         <TabsContent value="blocked">
-          <BlockedSlotsManager initialSlots={blockedSlots} />
+          <BlockedSlotsManager initialSlots={blockedSlots} canEdit={isAdmin} />
         </TabsContent>
 
         {isAdmin && (
