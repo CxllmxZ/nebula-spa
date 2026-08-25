@@ -39,9 +39,9 @@ export function RecentBookings({ bookings }: RecentBookingsProps) {
             <button
               type="button"
               onClick={() => openBooking(b)}
-              className="w-full flex items-center gap-4 py-3 hover:bg-muted/50 rounded-md px-2 -mx-2 transition-colors text-left"
+              className="w-full flex items-center gap-3 py-3 hover:bg-muted/50 rounded-md px-2 -mx-2 transition-colors text-left"
             >
-              <div className="min-w-[64px] text-center">
+              <div className="text-center shrink-0">
                 <div className="text-xs text-muted-foreground">
                   {formatInTimeZone(b.startsAt, BANGKOK_TZ, "d MMM")}
                 </div>
@@ -51,13 +51,15 @@ export function RecentBookings({ bookings }: RecentBookingsProps) {
               </div>
 
               <div className="flex-1 min-w-0">
-                <div className="truncate font-medium">{b.customerName}</div>
-                <div className="truncate text-sm text-muted-foreground">
+                <div className="font-medium leading-tight">
+                  {b.customerName}
+                </div>
+                <div className="truncate text-sm text-muted-foreground mt-0.5">
                   {b.serviceName}
                 </div>
               </div>
 
-              <div className="flex flex-col items-end gap-1">
+              <div className="flex flex-col items-end gap-1 shrink-0">
                 <div className="text-sm font-semibold">
                   {formatCurrency(b.price)}
                 </div>

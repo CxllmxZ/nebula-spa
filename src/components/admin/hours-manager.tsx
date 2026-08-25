@@ -95,7 +95,7 @@ export function HoursManager({ initialHours, canEdit = true }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">เวลาทำการ</h2>
           <p className="text-sm text-muted-foreground">
@@ -104,15 +104,22 @@ export function HoursManager({ initialHours, canEdit = true }: Props) {
           </p>
         </div>
         {canEdit && (
-          <div className="flex gap-2">
+          <div className="flex gap-2 shrink-0">
             <Button
               variant="outline"
+              size="sm"
+              className="flex-1 sm:flex-none"
               onClick={reset}
               disabled={!isDirty || isSaving}
             >
               ยกเลิก
             </Button>
-            <Button onClick={handleSave} disabled={!isDirty || isSaving}>
+            <Button
+              size="sm"
+              className="flex-1 sm:flex-none"
+              onClick={handleSave}
+              disabled={!isDirty || isSaving}
+            >
               {isSaving ? "กำลังบันทึก..." : "บันทึก"}
             </Button>
           </div>

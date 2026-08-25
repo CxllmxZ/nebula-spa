@@ -73,7 +73,55 @@ export function BookingsTable({ bookings, meta, currentFilter }: Props) {
   return (
     <>
       <div className="space-y-4">
-        <div className="rounded-md border">
+        {/* Mobile: card list */}
+        <div className="md:hidden space-y-2">
+          {bookings.map((b) => {
+            const cfg = BOOKING_STATUS_CONFIG[b.status];
+            return (
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => openBooking(b)}
+                className="w-full rounded-md border bg-card p-3 text-left hover:bg-muted/50 transition-colors"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium">{b.customerName}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {b.customerPhone}
+                    </div>
+                    <div className="text-sm mt-2">
+                      {b.serviceName}
+                      <span className="text-muted-foreground ml-1">
+                        · {b.durationMin} นาที
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <div className="text-sm font-semibold">
+                      {formatCurrency(b.price)}
+                    </div>
+                    <Badge variant={cfg.variant} className="text-xs">
+                      {cfg.label}
+                    </Badge>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-2 pt-2 border-t text-xs text-muted-foreground">
+                  <span>
+                    {formatInTimeZone(b.startsAt, BANGKOK_TZ, "d MMM yyyy")}
+                  </span>
+                  <span>·</span>
+                  <span className="font-medium text-foreground">
+                    {formatInTimeZone(b.startsAt, BANGKOK_TZ, "HH:mm")}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Desktop: table */}
+        <div className="hidden md:block rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -127,12 +175,12 @@ export function BookingsTable({ bookings, meta, currentFilter }: Props) {
           </Table>
         </div>
 
-        {/* Pagination */}
-        <div className="flex items-center justify-between text-sm">
-          <div className="text-muted-foreground">
+        {/* Pagination — same for both */}
+        <div className="flex items-center justify-between text-sm gap-3">
+          <div className="text-muted-foreground text-xs md:text-sm">
             ทั้งหมด {meta.total} รายการ · หน้า {meta.page} จาก {meta.totalPages}
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 shrink-0">
             <Button
               variant="outline"
               size="sm"

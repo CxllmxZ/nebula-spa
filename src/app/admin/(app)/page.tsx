@@ -51,9 +51,9 @@ export default async function AdminDashboardPage() {
           <CardDescription className="text-primary-foreground/80">
             คิวถัดไปวันนี้
           </CardDescription>
-          <CardTitle className="text-4xl">
+          <CardTitle className="text-3xl md:text-4xl">
             {formatCount(stats.today.upcomingCount)}
-            <span className="ml-2 text-lg font-normal text-primary-foreground/80">
+            <span className="ml-2 text-base md:text-lg font-normal text-primary-foreground/80">
               รายการ
             </span>
           </CardTitle>

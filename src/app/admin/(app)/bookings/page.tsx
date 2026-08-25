@@ -41,20 +41,13 @@ export default async function BookingsPage({ searchParams }: PageProps) {
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       {/* Header */}
-      <div className="space-y-2">
-        <Link
-          href="/admin"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          กลับแดชบอร์ด
-        </Link>
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">การจอง</h1>
-          <p className="text-muted-foreground">
-            จัดการการจองทั้งหมด — ตัวกรอง + ค้นหา + เปลี่ยนสถานะ
-          </p>
-        </div>
+      <div>
+        <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">
+          การจอง
+        </h1>
+        <p className="text-sm md:text-base text-muted-foreground">
+          จัดการการจองทั้งหมด — ตัวกรอง + ค้นหา + เปลี่ยนสถานะ
+        </p>
       </div>
 
       {/* Filter bar */}

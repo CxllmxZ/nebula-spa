@@ -27,14 +27,15 @@ export default async function AdminAppLayout({
   return (
     <div className="flex min-h-screen flex-col bg-muted/40">
       <header className="border-b bg-card">
-        <div className="flex items-center justify-between gap-6 px-6 py-4">
+        <div className="flex items-center justify-between gap-3 md:gap-6 px-4 md:px-6 py-3 md:py-4">
           <Link
             href="/admin"
-            className="text-lg font-semibold tracking-tight hover:opacity-80 transition-opacity"
+            className="text-base md:text-lg font-semibold tracking-tight hover:opacity-80 transition-opacity whitespace-nowrap"
           >
-            Nebula Spa Admin
+            <span className="md:hidden">Nebula Spa</span>
+            <span className="hidden md:inline">Nebula Spa Admin</span>
           </Link>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 md:gap-3">
             <AdminNav />
             <UserMenu name={user.name} email={user.email} role={role} />
           </div>

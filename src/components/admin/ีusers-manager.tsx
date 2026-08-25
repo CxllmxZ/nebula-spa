@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { format, parseISO } from "date-fns";
 import { Plus, Trash2, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 import {
   Table,
@@ -128,109 +129,102 @@ export function UsersManager({ initialUsers, currentUserId }: Props) {
           </Button>
         </div>
 
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>ชื่อ</TableHead>
-                <TableHead>อีเมล</TableHead>
-                <TableHead>บทบาท</TableHead>
-                <TableHead>เพิ่มเมื่อ</TableHead>
-                <TableHead className="w-24 text-right">จัดการ</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {initialUsers.map((u) => {
-                const isSelf = u.id === currentUserId;
-                const isLastAdmin = u.role === "admin" && adminCount <= 1;
-                const isRowPending = pendingId === u.id;
-                const canModify = !isSelf && !isRowPending;
+        {/* Mobile: card list */}
+        <div className="md:hidden space-y-2">
+          {initialUsers.map((u) => {
+            const isSelf = u.id === currentUserId;
+            const isLastAdmin = u.role === "admin" && adminCount <= 1;
+            const isRowPending = pendingId === u.id;
+            const canModify = !isSelf && !isRowPending;
 
-                return (
-                  <TableRow
-                    key={u.id}
-                    className={isRowPending ? "opacity-50" : undefined}
-                  >
-                    <TableCell>
-                      <div className="font-medium">
-                        {u.name}
-                        {isSelf && (
-                          <span className="ml-2 text-xs text-muted-foreground">
-                            (คุณ)
-                          </span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
+            return (
+              <div
+                key={u.id}
+                className={cn(
+                  "rounded-md border bg-card p-3",
+                  isRowPending && "opacity-50",
+                )}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium">
+                      {u.name}
+                      {isSelf && (
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          (คุณ)
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5 truncate">
                       {u.email}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={ROLE_VARIANTS[u.role] ?? "outline"}
-                        className="text-xs"
-                      >
-                        {ROLE_LABELS[u.role] ?? u.role}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {format(parseISO(u.createdAt), "d MMM yyyy")}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center justify-end gap-1">
-                        {/* Change role dropdown */}
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8"
-                              disabled={!canModify}
-                            >
-                              บทบาท <ChevronDown className="ml-1 h-3 w-3" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuLabel>เปลี่ยนบทบาท</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            {ROLES_ORDERED.map((r) => {
-                              const isCurrent = r === u.role;
-                              const wouldDemoteLastAdmin =
-                                isLastAdmin && r !== "admin";
-                              return (
-                                <DropdownMenuItem
-                                  key={r}
-                                  disabled={isCurrent || wouldDemoteLastAdmin}
-                                  onSelect={() => changeRole(u, r)}
-                                >
-                                  {ROLE_LABELS[r]}
-                                  {isCurrent && (
-                                    <span className="ml-auto text-xs text-muted-foreground">
-                                      ปัจจุบัน
-                                    </span>
-                                  )}
-                                </DropdownMenuItem>
-                              );
-                            })}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      เพิ่มเมื่อ {format(parseISO(u.createdAt), "d MMM yyyy")}
+                    </div>
+                  </div>
+                  <Badge
+                    variant={ROLE_VARIANTS[u.role] ?? "outline"}
+                    className="text-xs shrink-0"
+                  >
+                    {ROLE_LABELS[u.role] ?? u.role}
+                  </Badge>
+                </div>
 
-                        {/* Delete button */}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive hover:text-destructive"
-                          onClick={() => deleteUser(u)}
-                          disabled={!canModify || isLastAdmin}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          <span className="sr-only">ลบ</span>
+                {canModify && (
+                  <div className="mt-2 pt-2 border-t flex items-center gap-1 justify-end">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-8">
+                          บทบาท <ChevronDown className="ml-1 h-3 w-3" />
                         </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>เปลี่ยนบทบาท</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {ROLES_ORDERED.map((r) => {
+                          const isCurrent = r === u.role;
+                          const wouldDemoteLastAdmin =
+                            isLastAdmin && r !== "admin";
+                          return (
+                            <DropdownMenuItem
+                              key={r}
+                              disabled={isCurrent || wouldDemoteLastAdmin}
+                              onSelect={() => changeRole(u, r)}
+                            >
+                              {ROLE_LABELS[r]}
+                              {isCurrent && (
+                                <span className="ml-auto text-xs text-muted-foreground">
+                                  ปัจจุบัน
+                                </span>
+                              )}
+                            </DropdownMenuItem>
+                          );
+                        })}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      onClick={() => deleteUser(u)}
+                      disabled={isLastAdmin}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span className="sr-only">ลบ</span>
+                    </Button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Desktop: table */}
+        <div className="hidden md:block rounded-md border">
+          <Table>
+            {/* keep existing structure */}
+            ...
           </Table>
         </div>
       </div>

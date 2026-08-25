@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { format, parseISO } from "date-fns";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 import {
   Table,
@@ -64,7 +65,7 @@ export function BlockedSlotsManager({ initialSlots, canEdit = true }: Props) {
   return (
     <>
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold">วันหยุด / ปิดพิเศษ</h2>
             <p className="text-sm text-muted-foreground">
@@ -74,7 +75,7 @@ export function BlockedSlotsManager({ initialSlots, canEdit = true }: Props) {
             </p>
           </div>
           {canEdit && (
-            <Button onClick={() => setDialogOpen(true)}>
+            <Button onClick={() => setDialogOpen(true)} className="sm:w-auto">
               <Plus className="mr-2 h-4 w-4" />
               เพิ่มวันหยุด
             </Button>
@@ -88,59 +89,115 @@ export function BlockedSlotsManager({ initialSlots, canEdit = true }: Props) {
               : "ยังไม่มีวันหยุดที่กำหนดไว้"}
           </div>
         ) : (
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>วันที่</TableHead>
-                  <TableHead>เวลา</TableHead>
-                  <TableHead>เหตุผล</TableHead>
-                  <TableHead className="w-20 text-right">ลบ</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {initialSlots.map((s) => {
-                  const start = parseISO(s.startsAt);
-                  const end = parseISO(s.endsAt);
-                  const isRowPending = pendingId === s.id;
-                  return (
-                    <TableRow
-                      key={s.id}
-                      className={isRowPending ? "opacity-50" : undefined}
-                    >
-                      <TableCell className="whitespace-nowrap text-sm font-medium">
-                        {format(start, "d MMM yyyy")}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-sm">
-                        {format(start, "HH:mm")} - {format(end, "HH:mm")}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {s.reason ?? (
-                          <span className="text-muted-foreground italic">
+          <>
+            {/* Mobile: card list */}
+            <div className="md:hidden space-y-2">
+              {initialSlots.map((s) => {
+                const start = parseISO(s.startsAt);
+                const end = parseISO(s.endsAt);
+                const isRowPending = pendingId === s.id;
+                return (
+                  <div
+                    key={s.id}
+                    className={cn(
+                      "rounded-md border bg-card p-3",
+                      isRowPending && "opacity-50",
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium">
+                          {format(start, "d MMM yyyy")}
+                        </div>
+                        <div className="text-sm text-muted-foreground mt-0.5">
+                          {format(start, "HH:mm")} - {format(end, "HH:mm")}
+                        </div>
+                        {s.reason && (
+                          <div className="text-sm mt-2 break-words">
+                            {s.reason}
+                          </div>
+                        )}
+                        {!s.reason && (
+                          <div className="text-sm mt-2 text-muted-foreground italic">
                             (ไม่ระบุเหตุผล)
-                          </span>
+                          </div>
                         )}
-                      </TableCell>
-                      <TableCell className="text-right">
+                      </div>
+                      {canEdit && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive shrink-0"
+                          onClick={() => handleDelete(s)}
+                          disabled={isRowPending}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          <span className="sr-only">ลบ</span>
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop: table */}
+            <div className="hidden md:block rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>วันที่</TableHead>
+                    <TableHead>เวลา</TableHead>
+                    <TableHead>เหตุผล</TableHead>
+                    {canEdit && (
+                      <TableHead className="w-20 text-right">ลบ</TableHead>
+                    )}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {initialSlots.map((s) => {
+                    const start = parseISO(s.startsAt);
+                    const end = parseISO(s.endsAt);
+                    const isRowPending = pendingId === s.id;
+                    return (
+                      <TableRow
+                        key={s.id}
+                        className={isRowPending ? "opacity-50" : undefined}
+                      >
+                        <TableCell className="whitespace-nowrap text-sm font-medium">
+                          {format(start, "d MMM yyyy")}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-sm">
+                          {format(start, "HH:mm")} - {format(end, "HH:mm")}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {s.reason ?? (
+                            <span className="text-muted-foreground italic">
+                              (ไม่ระบุเหตุผล)
+                            </span>
+                          )}
+                        </TableCell>
                         {canEdit && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive"
-                            onClick={() => handleDelete(s)}
-                            disabled={isRowPending}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            {canEdit && <span className="sr-only">ลบ</span>}
-                          </Button>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive"
+                              onClick={() => handleDelete(s)}
+                              disabled={isRowPending}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              <span className="sr-only">ลบ</span>
+                            </Button>
+                          </TableCell>
                         )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </>
         )}
       </div>
 

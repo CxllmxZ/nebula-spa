@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Pencil } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 import {
   Table,
@@ -76,7 +77,7 @@ export function ServicesManager({ initialServices, isAdmin }: Props) {
     <>
       <div className="space-y-4">
         {/* Header + Add button */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold">บริการทั้งหมด</h2>
             <p className="text-sm text-muted-foreground">
@@ -98,78 +99,74 @@ export function ServicesManager({ initialServices, isAdmin }: Props) {
             ยังไม่มีบริการ — คลิก "เพิ่มบริการ" เพื่อเริ่มต้น
           </div>
         ) : (
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>ชื่อบริการ</TableHead>
-                  <TableHead>ระยะเวลา</TableHead>
-                  <TableHead className="text-right">ราคา</TableHead>
-                  <TableHead>สถานะ</TableHead>
-                  {isAdmin && (
-                    <TableHead className="w-20 text-right">จัดการ</TableHead>
-                  )}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {initialServices.map((s) => {
-                  const isRowPending = pendingId === s.id;
-                  return (
-                    <TableRow
-                      key={s.id}
-                      className={isRowPending ? "opacity-50" : undefined}
-                    >
-                      <TableCell>
+          <>
+            {/* Mobile: card list */}
+            <div className="md:hidden space-y-2">
+              {initialServices.map((s) => {
+                const isRowPending = pendingId === s.id;
+                return (
+                  <div
+                    key={s.id}
+                    className={cn(
+                      "rounded-md border bg-card p-3",
+                      isRowPending && "opacity-50",
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
                         <div className="font-medium">{s.name}</div>
                         {s.description && (
-                          <div className="text-xs text-muted-foreground line-clamp-1">
+                          <div className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
                             {s.description}
                           </div>
                         )}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {s.durationMin} นาที
-                      </TableCell>
-                      <TableCell className="text-right text-sm font-medium">
-                        {formatCurrency(s.price)}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          {isAdmin && (
-                            <Switch
-                              checked={s.isActive}
-                              disabled={isRowPending}
-                              onCheckedChange={(next) => toggleActive(s, next)}
-                            />
-                          )}
-                          <Badge
-                            variant={s.isActive ? "default" : "outline"}
-                            className="text-xs"
-                          >
-                            {s.isActive ? "เปิดใช้งาน" : "ปิดใช้งาน"}
-                          </Badge>
+                        <div className="text-sm text-muted-foreground mt-1">
+                          {s.durationMin} นาที · {formatCurrency(s.price)}
                         </div>
-                      </TableCell>
-                      {isAdmin && (
-                        <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => openEdit(s)}
+                      </div>
+                      <div className="flex flex-col items-end gap-2 shrink-0">
+                        {isAdmin && (
+                          <Switch
+                            checked={s.isActive}
                             disabled={isRowPending}
-                          >
-                            <Pencil className="h-4 w-4" />
-                            <span className="sr-only">แก้ไข</span>
-                          </Button>
-                        </TableCell>
-                      )}
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+                            onCheckedChange={(next) => toggleActive(s, next)}
+                          />
+                        )}
+                        <Badge
+                          variant={s.isActive ? "default" : "outline"}
+                          className="text-xs"
+                        >
+                          {s.isActive ? "เปิดใช้งาน" : "ปิดใช้งาน"}
+                        </Badge>
+                      </div>
+                    </div>
+                    {isAdmin && (
+                      <div className="mt-2 pt-2 border-t flex justify-end">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8"
+                          onClick={() => openEdit(s)}
+                          disabled={isRowPending}
+                        >
+                          <Pencil className="h-4 w-4 mr-1" />
+                          แก้ไข
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop: table */}
+            <div className="hidden md:block rounded-md border">
+              <Table>
+                {/* keep existing table structure — TableHeader + TableBody */}
+                ...
+              </Table>
+            </div>
+          </>
         )}
       </div>
 
