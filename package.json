@@ -8,13 +8,21 @@
   },
   "scripts": {
     "dev": "next dev",
+    "dev:cf": "cross-env NEXT_PUBLIC_TURNSTILE_SITE_KEY=1x00000000000000000000AA opennextjs-cloudflare build && wrangler dev",
     "build": "next build",
+    "build:cf": "opennextjs-cloudflare build",
     "start": "next start",
+    "deploy": "opennextjs-cloudflare deploy",
+    "deploy:dry": "opennextjs-cloudflare deploy --dry-run",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv ./cloudflare-env.d.ts",
     "seed:gen": "tsx scripts/seed.ts",
     "seed:local": "wrangler d1 execute nebula-spa-db --local --file=scripts/seed.sql",
     "seed:remote": "wrangler d1 execute nebula-spa-db --remote --file=scripts/seed.sql",
-    "seed": "pnpm seed:gen && pnpm seed:local"
+    "seed": "pnpm seed:gen && pnpm seed:local",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.6.25",
@@ -43,10 +51,12 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260721.1",
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "cross-env": "^10.1.0",
     "dotenv": "^17.4.2",
     "drizzle-kit": "^0.31.10",
     "tailwindcss": "^4",

@@ -62,3 +62,8 @@ Thumbs.db
 # Generated seed SQL
 scripts/seed.sql
 .env.production
+
+# Playwright
+/test-results/
+/playwright-report/
+/tests/.auth/
