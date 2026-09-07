@@ -1,6 +1,8 @@
 import { getActiveServices } from "@/lib/db/queries/services";
 import { BookingFlow } from "./_components/booking-flow";
 
+export const dynamic = "force-dynamic";
+
 type PageProps = {
   searchParams: Promise<{ service?: string }>;
 };

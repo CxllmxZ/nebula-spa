@@ -19,4 +19,4 @@ migrations_dir = "drizzle/migrations"
 [vars]
 BETTER_AUTH_URL = "https://nebula-spa.bimav.workers.dev"
 NEXT_PUBLIC_TURNSTILE_SITE_KEY = "0x4AAAAAAEYUSK9NyWXTlUxn"
-LINE_ENABLED = "false"
+LINE_ENABLED = "true"

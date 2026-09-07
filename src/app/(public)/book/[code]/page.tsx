@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { getBookingByCode } from "@/lib/db/queries/bookings";
 import { LineConnectCard } from "@/app/(public)/book/[code]/_components/line-connect-card";
 
+export const dynamic = "force-dynamic";
+
 type PageProps = {
   params: Promise<{ code: string }>;
 };

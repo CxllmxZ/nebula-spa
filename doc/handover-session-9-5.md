@@ -906,12 +906,198 @@ test-cases.xlsx (rows) → parser → Playwright runner → execute → result �
 
 ---
 
+## Post-Session Q&A — GitHub Actions Deep Dive
+
+หลังปิด implementation แล้ว user ถามคำถาม 4 ข้อเกี่ยวกับ GitHub Actions เพื่อเตรียม session 9.7 (CI setup) — เนื้อหาสำคัญที่ต้อง reference
+
+### Q1: Actions รัน terminal command ได้ไหม?
+
+**A: ได้ทุก command ที่ terminal ทำได้** — นั่นคือหน้าที่หลัก
+
+**Concepts:**
+- Workflow = YAML file ใน `.github/workflows/`
+- Trigger = when to run (push, PR, cron, manual, workflow_run, release)
+- Job = group of steps บน 1 machine
+- Step = `uses:` (pre-built action) หรือ `run:` (arbitrary shell command)
+
+**OS options:** ubuntu-latest, windows-latest, macos-latest (Nebula ใช้ ubuntu)
+
+**Environment: Runner มีของ pre-install ให้ (Node, Python, git, docker, ...)** — ต่อยอดได้ทันที
+
+---
+
+### Q2: Runner รันแล้วจบ หรืออยู่ตลอด? Package ลงที่ไหน?
+
+**A: Ephemeral — spin ทุก run, destroy หลังจบ**
+
+**Life cycle:**
+```
+Push code → Spawn VM ใหม่ (10-30s) → Clone repo → Run steps → DESTROY VM
+```
+
+**Package install location:**
+```
+/home/runner/work/nebula-spa/     ← repo clone
+/home/runner/.cache/ms-playwright/  ← Chromium install (~200MB)
+```
+
+**หลัง VM destroy = ทุกอย่างหายหมด** — next run = VM ใหม่, install ใหม่
+
+**GitHub-hosted vs Self-hosted:**
+| | GitHub-hosted | Self-hosted |
+|---|---|---|
+| Persistence | ❌ ephemeral | ✅ persistent |
+| Setup | ✅ zero | ⚠️ maintain server |
+| Cost | Free quota + paid overflow | Hardware cost + electricity |
+| Security | ✅ isolated | ⚠️ workflow can access host |
+| Access | Internet only | Can access internal network |
+
+**Nebula Spa:** GitHub-hosted (ephemeral) เหมาะสุด
+
+**Optimization — Cache pattern (สำคัญมาก):**
+```yaml
+- uses: actions/cache@v4
+  with:
+    path: |
+      ~/.pnpm-store
+      ~/.cache/ms-playwright
+      .next/cache
+    key: ${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+```
+
+**Result:** First run 5 min → subsequent runs 1-2 min (60-80% saving)
+
+---
+
+### Q3: 2 users ใช้ tool เดียวกัน — คนที่ 2 ควรรันไหม? Isolation model?
+
+**A: Repo-level isolation (ไม่มี concept user ใน execution)**
+
+**Isolation Model 3 ระดับ:**
+
+| Concept | Scope | Persist? | Shared across users? |
+|---|---|---|---|
+| **Runner (VM)** | Per run | ❌ ephemeral | ❌ isolated |
+| **Cache** | Per repo | ✅ up to 7 days | ✅ shared |
+| **Artifacts** | Per repo | ✅ up to 90 days | ✅ shared |
+| **Secrets** | Per repo (or org) | ✅ permanent | ✅ shared |
+
+**Behavior:**
+- User A push → VM #1 → destroy
+- User B push → VM #2 (คนละเครื่อง) → destroy
+- Cache = shared → User B ได้ประโยชน์จาก cache ที่ User A สร้าง
+
+**Concurrent = OK by default (parallel VMs)**
+
+**Concurrency Control Patterns:**
+
+**Pattern 1: Cancel previous (สำหรับ PR)**
+```yaml
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+```
+
+**Pattern 2: Queue (สำหรับ deploy)**
+```yaml
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+```
+
+**Pattern 3: Free-for-all (default)** — parallel
+
+**Permissions vs Execution:**
+- Users = permission model (who can trigger)
+- Execution = isolated by run
+- Cache/Secrets = shared per repo
+
+---
+
+### Q4: 10 users จะระเบิดไหม?
+
+**A: Technical ไม่ระเบิด — GitHub handle concurrency ให้ (spawn 10 VMs parallel)**
+
+**แต่ scale problems ที่ต้อง engineer:**
+
+**Problem 1: Quota แตก**
+```
+10 devs × 5 push/day × 22 days × 3 min = 3,300 min/month
+Free tier: 2,000 min/month
+Overflow: 1,300 min × $0.008 = $10.40/month
+```
+
+**Problem 2: Concurrent job limit**
+- Free tier: **20 concurrent jobs**
+- 10 devs × 3 jobs/workflow = 30 jobs → 10 รอ queue
+
+**Problem 3: Cache storage limit**
+- **10 GB per repo total**
+- หลาย feature branch = หลาย cache key
+- Full → LRU eviction → cache miss rate เพิ่ม
+
+**Problem 4: External rate limits**
+- pnpm registry: 5,000 req/hour/IP (shared GitHub IP pool)
+- Cloudflare API: 1,200 req/5min per token
+- Playwright CDN: no hard limit but throttle possible
+
+**Break-even points:**
+
+| Team size | Push/day | Monthly min | Free tier fit? |
+|---|---|---|---|
+| Solo | 5-10 | 500-1,500 | ✅ |
+| 2-3 | 15-30 | 1,500-3,000 | ⚠️ close |
+| 5 | 25-50 | 2,500-5,000 | ❌ overflow |
+| 10 | 50-100 | 5,000-10,000 | ❌ need paid |
+| 20+ | 100+ | 10,000+ | ❌ need self-hosted |
+
+**Mitigation Strategy (เรียงตาม impact):**
+
+**Level 1: Free wins**
+- Skip runs on unrelated changes (`paths-ignore`)
+- Cancel outdated PR runs (`cancel-in-progress`)
+- Cache everything (deps + browsers + build)
+- Test tiering (smoke PR / full main)
+
+**Level 2: Architecture**
+- Split workflows (lint / unit / e2e-smoke / e2e-full)
+- Reduce test scope on PR
+- Matrix strategy อย่างระวัง
+
+**Level 3: Infrastructure investment**
+- Upgrade GitHub Team plan ($4/user/month)
+- Alternative CI (CircleCI 6,000 min free)
+- Docker-based (Playwright image pre-installed)
+- Self-hosted runner (persistent, unlimited)
+
+**Public repo = unlimited free Actions** → key reason to open-source
+
+---
+
+### Q&A Takeaways for future
+
+**Concepts เข้าใจแล้ว (ready for session 9.7):**
+1. ✅ Runner = ephemeral VM (understand life cycle)
+2. ✅ Cache = shared per repo (key strategy matters)
+3. ✅ Concurrency = configurable (cancel/queue/parallel)
+4. ✅ Isolation = per-run VM, per-repo cache/secrets
+5. ✅ Scale = 10+ users need infra investment
+
+**Applied to Nebula Spa (future session 9.7):**
+- Solo dev = Free tier พอ
+- If team grows → optimize cache + cancel-in-progress
+- If open source → public repo = ฟรี unlimited
+- Consider self-hosted ถ้ามี hardware + team ≥ 10
+
+---
+
 ## Reference Files
 
 - `docs/handover-session-9.md` — Deploy handover (Turnstile env precedence bug 3 context)
 - `docs/handover-session-3-4.md` — Infrastructure + Auth (wrangler dev workflow origin)
 - `docs/booking-system-workflow.md` — Availability algorithm (the guard that's not working)
 - `docs/roadmap.md` — Session sequence + effort estimates
+- `docs/ttest-project-brief.md` — Side project idea spawned from this session
 - `playwright.config.ts` — E2E config
 - `tests/` — 4 spec files + 1 setup
 
@@ -920,4 +1106,5 @@ test-cases.xlsx (rows) → parser → Playwright runner → execute → result �
 **End of Session 9.5 handover**
 
 Session 10 = LINE integration (per roadmap)  
-Bug fixes (build error + booking duplicate) = ต้องแทรกก่อนสุดท้ายก่อน sell Fastwork
+Bug fixes (build error + booking duplicate) = ต้องแทรกก่อนสุดท้ายก่อน sell Fastwork  
+Session 9.7 (GitHub Actions CI) = พร้อมทำ (Q&A ครอบคลุมแล้ว)

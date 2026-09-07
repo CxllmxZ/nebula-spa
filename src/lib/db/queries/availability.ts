@@ -1,4 +1,14 @@
-import { and, eq, gte, inArray, lt, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  gte,
+  inArray,
+  lt,
+  lte,
+  or,
+  sql,
+  notInArray,
+} from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import {
   bookings,
@@ -44,8 +54,7 @@ const SLOT_GRANULARITY_MIN = 30;
  *   - Block immediately + auto-expire?
  *   - Or use separate reservation table to isolate spam risk?
  */
-const BLOCKING_STATUSES = ["confirmed"] as const;
-
+const NON_BLOCKING_STATUSES = ["cancelled", "no-show"] as const;
 // ─────────────────────────────────────────────────────────────
 // Public API
 // ─────────────────────────────────────────────────────────────
@@ -96,7 +105,7 @@ export async function getAvailableSlots(
 
   // ─── Step 4: Fetch existing bookings on this date ─────────
   const dayStart = bangkokDateTimeToUtc(date, "00:00");
-  const dayEnd = bangkokDateTimeToUtc(date, "23:59");
+  const dayEnd = bangkokDateTimeToUtc(date, "23:59:59");
 
   const existing = await db
     .select({ startsAt: bookings.startsAt, endsAt: bookings.endsAt })
@@ -105,7 +114,7 @@ export async function getAvailableSlots(
       and(
         gte(bookings.startsAt, dayStart),
         lte(bookings.startsAt, dayEnd),
-        inArray(bookings.status, [...BLOCKING_STATUSES]),
+        notInArray(bookings.status, [...NON_BLOCKING_STATUSES]),
       ),
     );
 
@@ -169,7 +178,7 @@ export async function hasBookingConflict(
         // Drizzle doesn't have gt() shorthand for timestamp — use raw comparison.
         // Must pass Unix seconds (not Date) because sql`` doesn't serialize.
         sql`${bookings.endsAt} > ${startsAtSec}`,
-        inArray(bookings.status, [...BLOCKING_STATUSES]),
+        notInArray(bookings.status, [...NON_BLOCKING_STATUSES]),
       ),
     )
     .limit(1);

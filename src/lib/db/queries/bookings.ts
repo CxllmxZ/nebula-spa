@@ -32,8 +32,6 @@ import {
 import { hasBookingConflict } from "./availability";
 import { generateBookingCode } from "@/lib/nanoid";
 import type { AdminBookingFilter } from "@/lib/validations";
-import { start } from "repl";
-import { number } from "zod";
 import { formatInTimeZone } from "date-fns-tz";
 
 // ─────────────────────────────────────────────────────────────
@@ -499,7 +497,7 @@ export async function getBookingStats(): Promise<BookingStats> {
   const [todayAgg, weekAgg, monthAgg, upcomingRows] = await Promise.all([
     aggregateInRange(todayRange.start, todayRange.end),
     aggregateInRange(weekRange.start, weekRange.end),
-    aggregateInRange(monthRange.start, weekRange.end),
+    aggregateInRange(monthRange.start, monthRange.end),
     db
       .select({ count: sql<number>`COUNT(*)`.as("count") })
       .from(bookings)
