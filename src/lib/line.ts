@@ -50,9 +50,13 @@ export async function pushLineText(
   channelAccessToken: string,
   userId: string,
   text: string,
+  enabled: boolean = true,
 ): Promise<void> {
-  if (process.env.LINE_ENABLED !== "true") {
-    console.log("[LINE disabled] would push:", { userId, text });
+  if (!enabled) {
+    console.log("[LINE disabled] would push:", {
+      userId: userId.slice(0, 6) + "...",
+      text,
+    });
     return;
   }
 
@@ -111,9 +115,10 @@ export async function sendBookingNotification(
   channelAccessToken: string,
   ownerUserId: string,
   data: BookingNotificationData,
+  enabled: boolean = true,
 ): Promise<void> {
   const text = formatBookingMessage(data);
-  await pushLineText(channelAccessToken, ownerUserId, text);
+  await pushLineText(channelAccessToken, ownerUserId, text, enabled);
 }
 
 // ---------- Internal formatting ----------
