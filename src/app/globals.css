@@ -2,7 +2,12 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-/*@custom-variant dark (&:is(.dark *));*/
+/*
+ * ธีม cosmic เป็นธีมมืดเสมอ — ให้ `dark:` ของ shadcn ทำงานใต้ .cosmic
+ * ไม่ขึ้นกับโหมดมืด/สว่างของระบบปฏิบัติการลูกค้า
+ * (เดิมคอมเมนต์ไว้ → dark: ไปเช็ค prefers-color-scheme → ช่อง input สีเพี้ยนตามเครื่อง)
+ */
+@custom-variant dark (&:is(.cosmic *));
 
 @theme inline {
   --color-background: var(--background);
@@ -100,18 +105,13 @@
   --accent-foreground: oklch(0.15 0.03 280);
   --destructive: oklch(0.6 0.2 25);
   --border: oklch(0.35 0.06 285 / 0.4); /* nebula-2 30% */
-  --input: oklch(0.94 0.01 85); /* #E8E4F0 mist (light bg) */
+  --input: oklch(
+    0.45 0.06 285
+  ); /* ขอบช่อง + พื้นโปร่ง 30% (dark:bg-input/30) */
   --ring: oklch(0.75 0.1 80); /* gold focus */
   --nebula-1: oklch(0.4 0.08 285);
   --nebula-2: oklch(0.6 0.1 285);
   --indigo: oklch(0.22 0.04 290);
-}
-
-/* input text ต้องอ่านได้บน light mist bg */
-.cosmic input,
-.cosmic textarea,
-.cosmic select {
-  color: oklch(0.2 0.03 280);
 }
 
 @layer base {
@@ -136,17 +136,14 @@
   }
 }
 
+/* แก้ syntax: เดิมมี comma คั่นระหว่าง blur กับสี → declaration ทั้งบรรทัดไม่ทำงาน */
 @keyframes glow {
   0%,
   100% {
-    box-shadow:
-      0 0 20px,
-      rgba(201, 169, 97, 0.3);
+    box-shadow: 0 0 20px rgba(201, 169, 97, 0.3);
   }
   50% {
-    box-shadow:
-      0 0 40px,
-      rgba(201, 169, 37, 0.5);
+    box-shadow: 0 0 40px rgba(201, 169, 97, 0.5);
   }
 }
 
@@ -164,12 +161,13 @@
   }
 }
 
+/* Autofill ของ browser — ให้เป็นพื้นมืด + ตัวหนังสือครีม ตรงกับช่องปกติ */
 .cosmic input:-webkit-autofill,
 .cosmic input:-webkit-autofill:hover,
 .cosmic input:-webkit-autofill:focus,
 .cosmic input:-webkit-autofill:active {
-  -webkit-box-shadow: 0 0 0 100px oklch(0.95 0.01 90) inset;
-  -webkit-text-fill-color: oklch(0.2 0.03 280);
-  caret-color: oklch(0.2 0.03 280);
+  -webkit-box-shadow: 0 0 0 100px oklch(0.22 0.04 280) inset;
+  -webkit-text-fill-color: var(--foreground);
+  caret-color: var(--primary);
   transition: background-color 5000s ease-in-out 0s;
 }

@@ -117,31 +117,6 @@ export async function POST(request: Request) {
     }),
   );
 
-  // Step 5: LINE notification — TEMP DEBUG (await, revert after)
-  /*try {
-    console.log("[DEBUG] Calling sendBookingNotification...");
-    await sendBookingNotification(
-      env.LINE_CHANNEL_ACCESS_TOKEN,
-      env.LINE_OWNER_USER_ID,
-      {
-        code: result.booking.code,
-        customerName: result.booking.customerName,
-        customerPhone: result.booking.customerPhone,
-        serviceName: result.serviceName,
-        startsAt: result.booking.startsAt,
-        durationMin: result.booking.durationMin,
-        price: result.booking.price,
-      },
-      env.LINE_ENABLED === "true",
-    );
-    console.log("[DEBUG] LINE push succeeded");
-  } catch (err) {
-    console.error(
-      "[DEBUG] LINE push threw:",
-      err instanceof Error ? err.message : String(err),
-    );
-  }*/
-
   // Step 6: Return success
   return NextResponse.json(
     {

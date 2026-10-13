@@ -67,3 +67,7 @@ scripts/seed.sql
 /test-results/
 /playwright-report/
 /tests/.auth/
+
+# Database backups (มีชื่อ + เบอร์ลูกค้า)
+backup-*.sql
+/backups/
