@@ -203,6 +203,8 @@ export async function getBookingByCode(
       status: bookings.status,
       notes: bookings.notes,
       createdAt: bookings.createdAt,
+      customerId: bookings.customerId,
+      updatedAt: bookings.updatedAt,
       // joined
       serviceName: services.name,
     })

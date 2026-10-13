@@ -15,6 +15,13 @@
       "when": 1785333264367,
       "tag": "0001_solid_zarda",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791900867350,
+      "tag": "0002_daily_inhumans",
+      "breakpoints": true
     }
   ]
 }
