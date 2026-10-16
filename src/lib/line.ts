@@ -1,28 +1,24 @@
 /**
- * LINE Messaging API — server-side push notification.
+ * LINE Messaging API — server-side helpers.
  *
  * ⚠️ LINE Notify shut down 31 Mar 2025 — MUST use Messaging API.
  *
- * Flow:
- *   1. Owner follows OA channel (get their LINE user ID)
- *   2. Server pushes messages via API to that user ID
- *   3. Owner sees notification in their LINE app
+ * ทุกฟังก์ชันที่ยิง API รับ `enabled` เป็น parameter (อ่านจาก Cloudflare env ที่ caller)
+ * ไม่อ่าน process.env เอง — single source of truth
  *
- * Free tier: 500 push messages/month (enough for demo).
+ * ⚠️ บน Cloudflare Workers: งานเบื้องหลังต้องห่อ ctx.waitUntil() เสมอ
+ * ไม่งั้น Worker ตัด I/O ทิ้งหลัง return response (Day 32)
  *
- * Docs: https://developers.line.biz/en/reference/messaging-api/#send-push-message
+ * Docs: https://developers.line.biz/en/reference/messaging-api/
  */
 
-const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";
+const LINE_API_BASE = "https://api.line.me/v2/bot";
+const LINE_PUSH_URL = `${LINE_API_BASE}/message/push`;
+const LINE_REPLY_URL = `${LINE_API_BASE}/message/reply`;
 
 interface LineTextMessage {
   type: "text";
   text: string;
-}
-
-interface LinePushBody {
-  to: string;
-  messages: LineTextMessage[];
 }
 
 interface LinePushError {
@@ -40,36 +36,75 @@ export interface BookingNotificationData {
   price: number;
 }
 
+// ─────────────────────────────────────────────────────────────
+// Webhook signature
+// ─────────────────────────────────────────────────────────────
+
 /**
- * Push a raw text message to a LINE user.
- * Low-level — usually use sendBookingNotification instead.
+ * ตรวจ x-line-signature = base64(HMAC-SHA256(channelSecret, rawBody))
  *
- * @throws Error if API call fails (caller decides retry/log/ignore)
+ * - ต้องใช้ raw body (string ก่อน JSON.parse) — parse แล้ว stringify ใหม่ = byte ไม่ตรง
+ * - ใช้ crypto.subtle.verify → เทียบแบบ constant-time (กัน timing attack)
  */
-export async function pushLineText(
+export async function verifyLineSignature(
+  channelSecret: string,
+  rawBody: string,
+  signature: string | null,
+): Promise<boolean> {
+  if (!channelSecret || !signature) return false;
+
+  let signatureBytes: Uint8Array<ArrayBuffer>;
+  try {
+    signatureBytes = Uint8Array.from(atob(signature), (c) => c.charCodeAt(0));
+  } catch {
+    return false; // ไม่ใช่ base64
+  }
+
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(channelSecret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["verify"],
+  );
+
+  return crypto.subtle.verify(
+    "HMAC",
+    key,
+    signatureBytes,
+    encoder.encode(rawBody),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Send messages
+// ─────────────────────────────────────────────────────────────
+
+function maskId(id: string): string {
+  return id.slice(0, 6) + "...";
+}
+
+async function throwLineError(response: Response): Promise<never> {
+  let errorMessage = `LINE API ${response.status}`;
+  try {
+    const errorBody = (await response.json()) as LinePushError;
+    errorMessage += `: ${errorBody.message}`;
+    if (errorBody.details?.length) {
+      errorMessage += ` (${errorBody.details.map((d) => d.message).join(", ")})`;
+    }
+  } catch {
+    // Response body not JSON — ignore
+  }
+  throw new Error(errorMessage);
+}
+
+async function postLine(
+  url: string,
   channelAccessToken: string,
-  userId: string,
-  text: string,
-  enabled: boolean = true,
+  body: unknown,
 ): Promise<void> {
-  if (!enabled) {
-    console.log("[LINE disabled] would push:", {
-      userId: userId.slice(0, 6) + "...",
-      text,
-    });
-    return;
-  }
-
-  if (!channelAccessToken || !userId) {
-    throw new Error("[LINE] Missing channelAccessToken or userId");
-  }
-
-  const body: LinePushBody = {
-    to: userId,
-    messages: [{ type: "text", text }],
-  };
-
-  const response = await fetch(LINE_PUSH_URL, {
+  const response = await fetch(url, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${channelAccessToken}`,
@@ -77,39 +112,87 @@ export async function pushLineText(
     },
     body: JSON.stringify(body),
   });
-
-  if (!response.ok) {
-    let errorMessage = `LINE API ${response.status}`;
-    try {
-      const errorBody = (await response.json()) as LinePushError;
-      errorMessage += `: ${errorBody.message}`;
-      if (errorBody.details?.length) {
-        errorMessage += ` (${errorBody.details.map((d) => d.message).join(", ")})`;
-      }
-    } catch {
-      // Response body not JSON — ignore
-    }
-    throw new Error(errorMessage);
-  }
+  if (!response.ok) await throwLineError(response);
 }
 
 /**
+ * Push text ถึง user หรือ group (to = userId / groupId)
+ * นับโควตา — กลุ่มนับตามจำนวนสมาชิก
+ *
+ * @throws Error if API call fails (caller decides retry/log/ignore)
+ */
+export async function pushLineText(
+  channelAccessToken: string,
+  to: string,
+  text: string,
+  enabled: boolean = true,
+): Promise<void> {
+  if (!enabled) {
+    console.log("[LINE disabled] would push:", { to: maskId(to), text });
+    return;
+  }
+  if (!channelAccessToken || !to) {
+    throw new Error("[LINE] Missing channelAccessToken or recipient");
+  }
+
+  const messages: LineTextMessage[] = [{ type: "text", text }];
+  await postLine(LINE_PUSH_URL, channelAccessToken, { to, messages });
+}
+
+/**
+ * Reply ด้วย replyToken จาก webhook event
+ * ไม่นับโควตา — ใช้ตอบในกลุ่ม/แชทเสมอเมื่อทำได้
+ * replyToken ใช้ได้ครั้งเดียว และหมดอายุเร็ว (ตอบทันทีใน webhook)
+ */
+export async function replyLineText(
+  channelAccessToken: string,
+  replyToken: string,
+  text: string,
+  enabled: boolean = true,
+): Promise<void> {
+  if (!enabled) {
+    console.log("[LINE disabled] would reply:", { text });
+    return;
+  }
+  if (!channelAccessToken || !replyToken) {
+    throw new Error("[LINE] Missing channelAccessToken or replyToken");
+  }
+
+  const messages: LineTextMessage[] = [{ type: "text", text }];
+  await postLine(LINE_REPLY_URL, channelAccessToken, { replyToken, messages });
+}
+
+/**
+ * ให้บอทออกจากกลุ่ม — ใช้ตอนผูกกลุ่มใหม่แทนกลุ่มเดิม
+ * 404 = บอทไม่อยู่ในกลุ่มแล้ว → ถือว่าสำเร็จ
+ */
+export async function leaveLineGroup(
+  channelAccessToken: string,
+  groupId: string,
+  enabled: boolean = true,
+): Promise<void> {
+  if (!enabled) {
+    console.log("[LINE disabled] would leave group:", maskId(groupId));
+    return;
+  }
+
+  const response = await fetch(
+    `${LINE_API_BASE}/group/${encodeURIComponent(groupId)}/leave`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${channelAccessToken}` },
+    },
+  );
+  if (!response.ok && response.status !== 404) await throwLineError(response);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Booking notification (owner)
+// ─────────────────────────────────────────────────────────────
+
+/**
  * Send new booking notification to shop owner.
- * Formats booking data into Thai text message.
- *
- * Design: fire-and-forget from caller — errors logged, never rollback booking.
- *
- * Example output:
- *   🌙 จองใหม่ Nebula Spa
- *
- *   รหัสจอง: A3F9K2
- *   ลูกค้า: คุณสมชาย
- *   เบอร์: 0812345678
- *
- *   บริการ: นวดไทย 60 นาที
- *   วัน: เสาร์ 15 ส.ค. 2569
- *   เวลา: 14:00 - 15:00
- *   ราคา: 300 บาท
+ * Design: fire-and-forget from caller (ctx.waitUntil) — errors logged, never rollback booking.
  */
 export async function sendBookingNotification(
   channelAccessToken: string,
@@ -141,8 +224,7 @@ const THAI_MONTHS = [
 const THAI_DAYS = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
 
 /**
- * Format Bangkok time as "เสาร์ 15 ส.ค. 2569"
- * Note: Uses Intl.DateTimeFormat with Asia/Bangkok timezone.
+ * Format Bangkok time as "ส. 15 ส.ค. 2569"
  */
 function formatBangkokDate(date: Date): string {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -150,17 +232,15 @@ function formatBangkokDate(date: Date): string {
     year: "numeric",
     month: "numeric",
     day: "numeric",
-    weekday: "short",
   }).formatToParts(date);
 
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
 
   const day = get("day");
   const month = Number.parseInt(get("month"), 10);
-  const yearAD = Number.parseInt(get("year"), 10);
-  const yearBE = yearAD + 543;
+  const yearBE = Number.parseInt(get("year"), 10) + 543;
 
-  // Weekday index via UTC offset trick
+  // Weekday index via UTC offset trick (Bangkok = UTC+7, no DST)
   const bangkokMs = date.getTime() + 7 * 60 * 60 * 1000;
   const dayOfWeek = new Date(bangkokMs).getUTCDay();
 
@@ -186,10 +266,6 @@ function formatBookingMessage(data: BookingNotificationData): string {
   const startsAt = data.startsAt;
   const endsAt = new Date(startsAt.getTime() + data.durationMin * 60 * 1000);
 
-  const dateStr = formatBangkokDate(startsAt);
-  const startTime = formatBangkokTime(startsAt);
-  const endTime = formatBangkokTime(endsAt);
-
   return [
     "🌙 จองใหม่ Nebula Spa",
     "",
@@ -198,8 +274,8 @@ function formatBookingMessage(data: BookingNotificationData): string {
     `เบอร์: ${data.customerPhone}`,
     "",
     `บริการ: ${data.serviceName}`,
-    `วัน: ${dateStr}`,
-    `เวลา: ${startTime} - ${endTime}`,
+    `วัน: ${formatBangkokDate(startsAt)}`,
+    `เวลา: ${formatBangkokTime(startsAt)} - ${formatBangkokTime(endsAt)}`,
     `ราคา: ${data.price} บาท`,
   ].join("\n");
 }
