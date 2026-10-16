@@ -226,7 +226,7 @@ const THAI_DAYS = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."]
 /**
  * Format Bangkok time as "ส. 15 ส.ค. 2569"
  */
-function formatBangkokDate(date: Date): string {
+export function formatBangkokDate(date: Date): string {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Bangkok",
     year: "numeric",
@@ -250,7 +250,7 @@ function formatBangkokDate(date: Date): string {
 /**
  * Format Bangkok time as "14:00"
  */
-function formatBangkokTime(date: Date): string {
+export function formatBangkokTime(date: Date): string {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Bangkok",
     hour: "2-digit",

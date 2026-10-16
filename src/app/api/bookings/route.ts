@@ -3,7 +3,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { bookingCreateSchema } from "@/lib/validations";
 import { verifyTurnstileToken } from "@/lib/turnstile";
 import { createBooking, BookingError } from "@/lib/db/queries/bookings";
-import { sendBookingNotification } from "@/lib/line";
+import { notifyBookingEvent, notifyEnvFrom } from "@/lib/notify";
 import { toBangkokIsoString } from "@/lib/datetime";
 
 /**
@@ -16,7 +16,7 @@ import { toBangkokIsoString } from "@/lib/datetime";
  *   2. Zod validate
  *   3. Verify Turnstile token
  *   4. Call createBooking() — throws BookingError on business errors
- *   5. Fire-and-forget LINE notification to shop owner
+ *   5. Background: แจ้งเจ้าของ + กลุ่มพนักงานผ่าน LINE (notify.ts)
  *   6. Return 201 with booking code
  *
  * Error responses:
@@ -94,23 +94,26 @@ export async function POST(request: Request) {
     );
   }
 
-  // Step 5: Fire-and-forget LINE notification (background task)
+  // Step 5: LINE notify — background (Workers ตัด I/O หลัง return ถ้าไม่ waitUntil)
   ctx.waitUntil(
-    sendBookingNotification(
-      env.LINE_CHANNEL_ACCESS_TOKEN,
-      env.LINE_OWNER_USER_ID,
+    notifyBookingEvent(
       {
-        code: result.booking.code,
-        customerName: result.booking.customerName,
-        customerPhone: result.booking.customerPhone,
-        serviceName: result.serviceName,
-        startsAt: result.booking.startsAt,
-        durationMin: result.booking.durationMin,
-        price: result.booking.price,
+        type: "created",
+        booking: {
+          code: result.booking.code,
+          customerName: result.booking.customerName,
+          customerPhone: result.booking.customerPhone,
+          serviceName: result.serviceName,
+          startsAt: result.booking.startsAt,
+          durationMin: result.booking.durationMin,
+          price: result.booking.price,
+          notes: result.booking.notes,
+          status: result.booking.status,
+        },
       },
-      env.LINE_ENABLED === "true",
+      notifyEnvFrom(env),
     ).catch((err) => {
-      console.error("[LINE push failed]", {
+      console.error("[notify] created failed", {
         code: result.booking.code,
         error: err instanceof Error ? err.message : String(err),
       });
