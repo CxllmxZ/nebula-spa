@@ -162,8 +162,76 @@ export function ServicesManager({ initialServices, isAdmin }: Props) {
             {/* Desktop: table */}
             <div className="hidden md:block rounded-md border">
               <Table>
-                {/* keep existing table structure — TableHeader + TableBody */}
-                ...
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>บริการ</TableHead>
+                    <TableHead className="w-28">ระยะเวลา</TableHead>
+                    <TableHead className="w-28 text-right">ราคา</TableHead>
+                    <TableHead className="w-36">สถานะ</TableHead>
+                    {isAdmin && (
+                      <TableHead className="w-24 text-right">แก้ไข</TableHead>
+                    )}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {initialServices.map((s) => {
+                    const isRowPending = pendingId === s.id;
+                    return (
+                      <TableRow
+                        key={s.id}
+                        className={isRowPending ? "opacity-50" : undefined}
+                      >
+                        <TableCell>
+                          <div className="font-medium">{s.name}</div>
+                          {s.description && (
+                            <div className="text-xs text-muted-foreground line-clamp-1">
+                              {s.description}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-sm">
+                          {s.durationMin} นาที
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-sm text-right">
+                          {formatCurrency(s.price)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {isAdmin && (
+                              <Switch
+                                checked={s.isActive}
+                                disabled={isRowPending}
+                                onCheckedChange={(next) =>
+                                  toggleActive(s, next)
+                                }
+                              />
+                            )}
+                            <Badge
+                              variant={s.isActive ? "default" : "outline"}
+                              className="text-xs"
+                            >
+                              {s.isActive ? "เปิดใช้งาน" : "ปิดใช้งาน"}
+                            </Badge>
+                          </div>
+                        </TableCell>
+                        {isAdmin && (
+                          <TableCell className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8"
+                              onClick={() => openEdit(s)}
+                              disabled={isRowPending}
+                            >
+                              <Pencil className="h-4 w-4 mr-1" />
+                              แก้ไข
+                            </Button>
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
               </Table>
             </div>
           </>

@@ -223,8 +223,103 @@ export function UsersManager({ initialUsers, currentUserId }: Props) {
         {/* Desktop: table */}
         <div className="hidden md:block rounded-md border">
           <Table>
-            {/* keep existing structure */}
-            ...
+            <TableHeader>
+              <TableRow>
+                <TableHead>ชื่อ</TableHead>
+                <TableHead>อีเมล</TableHead>
+                <TableHead className="w-28">บทบาท</TableHead>
+                <TableHead className="w-32">เพิ่มเมื่อ</TableHead>
+                <TableHead className="w-40 text-right">จัดการ</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {initialUsers.map((u) => {
+                const isSelf = u.id === currentUserId;
+                const isLastAdmin = u.role === "admin" && adminCount <= 1;
+                const isRowPending = pendingId === u.id;
+                const canModify = !isSelf && !isRowPending;
+
+                return (
+                  <TableRow
+                    key={u.id}
+                    className={isRowPending ? "opacity-50" : undefined}
+                  >
+                    <TableCell className="font-medium">
+                      {u.name}
+                      {isSelf && (
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          (คุณ)
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {u.email}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={ROLE_VARIANTS[u.role] ?? "outline"}
+                        className="text-xs"
+                      >
+                        {ROLE_LABELS[u.role] ?? u.role}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-sm">
+                      {format(parseISO(u.createdAt), "d MMM yyyy")}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {canModify ? (
+                        <div className="flex items-center justify-end gap-1">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8">
+                                บทบาท <ChevronDown className="ml-1 h-3 w-3" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuLabel>
+                                เปลี่ยนบทบาท
+                              </DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              {ROLES_ORDERED.map((r) => {
+                                const isCurrent = r === u.role;
+                                const wouldDemoteLastAdmin =
+                                  isLastAdmin && r !== "admin";
+                                return (
+                                  <DropdownMenuItem
+                                    key={r}
+                                    disabled={isCurrent || wouldDemoteLastAdmin}
+                                    onSelect={() => changeRole(u, r)}
+                                  >
+                                    {ROLE_LABELS[r]}
+                                    {isCurrent && (
+                                      <span className="ml-auto text-xs text-muted-foreground">
+                                        ปัจจุบัน
+                                      </span>
+                                    )}
+                                  </DropdownMenuItem>
+                                );
+                              })}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={() => deleteUser(u)}
+                            disabled={isLastAdmin}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            <span className="sr-only">ลบ</span>
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
           </Table>
         </div>
       </div>

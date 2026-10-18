@@ -121,7 +121,8 @@ async function safePush(
 // Shop closed (Asia/Bangkok)
 // ─────────────────────────────────────────────────────────────
 
-function bangkokToday(): string {
+/** วันนี้ตามเวลาไทย "YYYY-MM-DD" */
+export function bangkokToday(): string {
   // en-CA → "YYYY-MM-DD"
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Bangkok",
@@ -131,17 +132,22 @@ function bangkokToday(): string {
   }).format(new Date());
 }
 
+export async function isShopClosedToday(): Promise<boolean> {
+  return isShopClosedOn(bangkokToday());
+}
+
 /**
- * วันนี้ร้านปิดทั้งวันไหม (นิยามตามแผน):
+ * วันนั้นร้านปิดทั้งวันไหม (นิยามตามแผน):
  *   1. business_hours ของวันนั้น is_closed (หรือไม่มีเวลาเปิด-ปิด)
  *   2. มี blocked_slot ที่ครอบเวลาเปิดทั้งหมดของวันนั้น
  * บล็อกแค่บางช่วง = ร้านยังเปิด
  *
  * ข้อจำกัด: ดูทีละบล็อก — ถ้าเจ้าของบล็อกหลายช่วงต่อกันจนเต็มวัน จะยังนับว่าเปิด
+ *
+ * @param date "YYYY-MM-DD" เวลาไทย
  */
-export async function isShopClosedToday(): Promise<boolean> {
+export async function isShopClosedOn(date: string): Promise<boolean> {
   const db = await getDb();
-  const date = bangkokToday();
 
   const [hours] = await db
     .select()

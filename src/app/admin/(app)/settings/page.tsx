@@ -12,7 +12,7 @@ import { toBangkokIsoString } from "@/lib/datetime";
 import { BlockedSlotsManager } from "@/components/admin/blocked-slots-manager";
 
 import { getAllUsers } from "@/lib/db/queries/users";
-import { UsersManager } from "@/components/admin/ีusers-manager";
+import { UsersManager } from "@/components/admin/users-manager";
 import { requireRoleAction } from "@/lib/auth-guard";
 
 interface PageProps {

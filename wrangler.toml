@@ -1,6 +1,6 @@
 #:schema node_modules/wrangler/config-schema.json
 name = "nebula-spa"
-main = ".open-next/worker.js"
+main = "custom-worker.ts"
 compatibility_date = "2026-07-21"
 compatibility_flags = ["nodejs_compat"]
 
@@ -20,3 +20,6 @@ migrations_dir = "drizzle/migrations"
 BETTER_AUTH_URL = "https://nebula-spa.bimav.workers.dev"
 NEXT_PUBLIC_TURNSTILE_SITE_KEY = "0x4AAAAAAEYUSK9NyWXTlUxn"
 LINE_ENABLED = "true"
+
+[triggers]
+crons = ["*/15 * * * *"]
