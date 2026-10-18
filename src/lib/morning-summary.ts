@@ -74,6 +74,12 @@ export async function runMorningSummary(
     getChangesWhileClosed(previousDate, today),
   ]);
 
+  // ร้านปิดแล้ววันนี้ → สรุป "คิววันนี้" ไม่มีประโยชน์ (เช่น เพิ่งเปลี่ยนเวลาสรุปตอนกลางคืน)
+  // ไม่บันทึกว่าส่งแล้ว — แต่พรุ่งนี้เป็นวันใหม่อยู่แล้ว
+  if (!opts.force && hours && nowBangkokHHMM() >= hours.close) {
+    return skip("after closing time");
+  }
+
   // ── จองวันนี้ (กันสองรอบส่งซ้ำ) ───────────────────────────────
   const claimed = await claimToday(today, opts.force === true);
   if (!claimed) return skip("already sent today (claimed by another run)");
