@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { requireRole } from "@/lib/auth-guard";
 import { bookingStatusUpdateSchema } from "@/lib/validations";
 import { getBookingById, updateBookingStatus } from "@/lib/db/queries/bookings";
 import { toBangkokIsoString } from "@/lib/datetime";
+import { notifyBookingEvent, notifyEnvFrom } from "@/lib/notify";
 
 /**
  * Next 16 dynamic route — params is Promise.
@@ -64,6 +66,11 @@ export async function GET(request: Request, { params }: RouteContext) {
  * Update booking status only. MVP scope — other fields not editable.
  * Workaround for time/customer changes: cancel + create new booking.
  *
+ * Side effect (Session 10 — LINE v2):
+ *   ยังไม่ยกเลิก → cancelled  และคิวยังไม่ถึงเวลา
+ *   → แจ้งกลุ่มพนักงาน "❌ ยกเลิกคิว · ยกเลิกโดย: ร้าน" (เจ้าของไม่ได้ — เป็นคนกดเอง)
+ *   ยกเลิกซ้ำ / คิวที่ผ่านไปแล้ว → ไม่แจ้ง
+ *
  * Body: { status: "pending" | "confirmed" | "completed" | "cancelled" | "no-show" }
  *
  * Response:
@@ -108,10 +115,51 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     );
   }
 
+  const nextStatus = parsed.data.status;
+
   try {
-    const updated = await updateBookingStatus(id, parsed.data.status);
+    // อ่านสถานะเดิมก่อนเปลี่ยน — ใช้ตัดสินว่าต้องแจ้งกลุ่มไหม
+    const before = await getBookingById(id);
+    if (!before) {
+      return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+    }
+
+    const updated = await updateBookingStatus(id, nextStatus);
     if (!updated) {
       return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+    }
+
+    const newlyCancelled =
+      before.status !== "cancelled" && nextStatus === "cancelled";
+    const stillUpcoming = updated.startsAt.getTime() > Date.now();
+
+    if (newlyCancelled && stillUpcoming) {
+      const { env, ctx } = await getCloudflareContext({ async: true });
+      ctx.waitUntil(
+        notifyBookingEvent(
+          {
+            type: "cancelled",
+            by: "owner",
+            booking: {
+              code: updated.code,
+              customerName: updated.customerName,
+              customerPhone: updated.customerPhone,
+              serviceName: updated.serviceName,
+              startsAt: updated.startsAt,
+              durationMin: updated.durationMin,
+              price: updated.price,
+              notes: updated.notes,
+              status: updated.status,
+            },
+          },
+          notifyEnvFrom(env),
+        ).catch((err) => {
+          console.error("[notify] cancelled failed", {
+            code: updated.code,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }),
+      );
     }
 
     return NextResponse.json({
