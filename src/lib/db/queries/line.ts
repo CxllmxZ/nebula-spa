@@ -181,3 +181,55 @@ export async function consumeLinkCode(
 
   return consumed.length > 0;
 }
+
+// ─────────────────────────────────────────────────────────────
+// Admin (หน้า settings → LINE)
+// ─────────────────────────────────────────────────────────────
+
+export interface LineSettingsPatch {
+  ownerNotifyEnabled?: boolean;
+  summaryEnabled?: boolean;
+  summaryTime?: string; // HH:MM
+}
+
+export async function updateLineSettings(
+  patch: LineSettingsPatch,
+): Promise<LineSettings> {
+  const db = await getDb();
+  await getLineSettings(); // ensure row
+  if (Object.keys(patch).length > 0) {
+    await db
+      .update(lineSettings)
+      .set(patch)
+      .where(eq(lineSettings.id, SETTINGS_ID));
+  }
+  return getLineSettings();
+}
+
+export async function unlinkOwner(): Promise<void> {
+  const db = await getDb();
+  await getLineSettings();
+  await db
+    .update(lineSettings)
+    .set({ ownerLineUserId: null })
+    .where(eq(lineSettings.id, SETTINGS_ID));
+}
+
+/**
+ * ยกเลิกผูกกลุ่ม
+ * @returns groupId เดิม (caller ให้บอทออกจากกลุ่ม) หรือ null
+ */
+export async function unlinkStaffGroup(): Promise<string | null> {
+  const db = await getDb();
+  const current = await getLineSettings();
+  await db
+    .update(lineSettings)
+    .set({
+      staffGroupId: null,
+      staffGroupStatus: "not_linked",
+      staffGroupLinkedAt: null,
+      staffGroupDisconnectedAt: null,
+    })
+    .where(eq(lineSettings.id, SETTINGS_ID));
+  return current.staffGroupStatus === "linked" ? current.staffGroupId : null;
+}

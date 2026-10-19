@@ -15,6 +15,9 @@ import { getAllUsers } from "@/lib/db/queries/users";
 import { UsersManager } from "@/components/admin/users-manager";
 import { requireRoleAction } from "@/lib/auth-guard";
 
+import { getLineSettingsDTO } from "@/lib/line-settings-dto";
+import { LineSettingsManager } from "@/components/admin/line-settings-manager";
+
 interface PageProps {
   searchParams: Promise<{ tab?: string }>;
 }
@@ -27,12 +30,14 @@ export default async function SettingsPage({ searchParams }: PageProps) {
   const { tab } = await searchParams;
   const defaultTab = tab ?? "services";
 
-  const [services, hours, blockedSlotsRaw, users] = await Promise.all([
-    getAllServices(),
-    getAllHours(),
-    getUpcomingBlockedSlots(),
-    isAdmin ? getAllUsers() : Promise.resolve([]),
-  ]);
+  const [services, hours, blockedSlotsRaw, users, lineSettings] =
+    await Promise.all([
+      getAllServices(),
+      getAllHours(),
+      getUpcomingBlockedSlots(),
+      isAdmin ? getAllUsers() : Promise.resolve([]),
+      isAdmin ? getLineSettingsDTO() : Promise.resolve(null),
+    ]);
 
   const blockedSlots = blockedSlotsRaw.map((s) => ({
     id: s.id,
@@ -55,7 +60,7 @@ export default async function SettingsPage({ searchParams }: PageProps) {
         <h1 className="text-3xl font-semibold tracking-tight">ตั้งค่า</h1>
         <p className="text-muted-foreground">
           จัดการบริการ เวลาทำการ และวันหยุด
-          {isAdmin && " · ทีมงาน"}
+          {isAdmin && " · ทีมงาน · LINE"}
         </p>
       </div>
 
@@ -66,6 +71,7 @@ export default async function SettingsPage({ searchParams }: PageProps) {
           <TabsTrigger value="hours">เวลาทำการ</TabsTrigger>
           <TabsTrigger value="blocked">วันหยุด</TabsTrigger>
           {isAdmin && <TabsTrigger value="team">ทีมงาน</TabsTrigger>}
+          {isAdmin && <TabsTrigger value="line">LINE</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="services">
@@ -86,6 +92,12 @@ export default async function SettingsPage({ searchParams }: PageProps) {
               initialUsers={usersDTO}
               currentUserId={session.user.id}
             />
+          </TabsContent>
+        )}
+
+        {isAdmin && lineSettings && (
+          <TabsContent value="line">
+            <LineSettingsManager initial={lineSettings} />
           </TabsContent>
         )}
       </Tabs>
