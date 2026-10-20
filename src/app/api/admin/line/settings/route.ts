@@ -14,8 +14,9 @@ const patchSchema = z
     ownerNotifyEnabled: z.boolean().optional(),
     summaryEnabled: z.boolean().optional(),
     summaryTime: z
-      .string()
-      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "เวลาต้องเป็นรูปแบบ HH:MM")
+      .enum(["06:00", "07:00", "08:00", "09:00"], {
+        message: "เลือกได้ 06:00, 07:00, 08:00 หรือ 09:00",
+      })
       .optional(),
   })
   .strict();

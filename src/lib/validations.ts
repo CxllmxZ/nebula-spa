@@ -260,31 +260,45 @@ export type UserRoleUpdate = z.infer<typeof userRoleUpdateSchema>;
 /**
  * POST /api/admin/blocked-slots — create one-off block.
  *
- * Client sends Bangkok date + start/end times.
+ * Client sends Bangkok date + start/end times (or allDay = ทั้งวัน 00:00 → 00:00 วันถัดไป).
  * Backend converts to UTC via bangkokDateTimeToUtc before insert.
+ *
+ * confirmOverlap: ถ้ามีคิวที่จองไว้แล้วในช่วงนี้ server ตอบ 409 พร้อมรายชื่อ
+ * → ผู้ใช้ยืนยันแล้วส่งซ้ำพร้อม confirmOverlap = true (คิวเดิมไม่ถูกยกเลิกอัตโนมัติ)
  */
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
 export const blockedSlotCreateSchema = z
   .object({
     date: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, "รูปแบบวันที่ไม่ถูกต้อง (YYYY-MM-DD)"),
-    startTime: z
-      .string()
-      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "รูปแบบเวลาไม่ถูกต้อง (HH:MM)"),
-    endTime: z
-      .string()
-      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "รูปแบบเวลาไม่ถูกต้อง (HH:MM)"),
+    allDay: z.boolean().default(false),
+    startTime: z.string().optional(),
+    endTime: z.string().optional(),
     reason: z
       .string()
       .trim()
       .max(200, "เหตุผลยาวเกินไป")
       .nullish()
       .transform((v) => (v && v.length > 0 ? v : null)),
+    confirmOverlap: z.boolean().optional(),
   })
-  .refine((d) => d.startTime < d.endTime, {
-    message: "เวลาเริ่มต้องก่อนเวลาสิ้นสุด",
+  .refine((d) => d.allDay || (!!d.startTime && HHMM.test(d.startTime)), {
+    message: "รูปแบบเวลาไม่ถูกต้อง (HH:MM)",
+    path: ["startTime"],
+  })
+  .refine((d) => d.allDay || (!!d.endTime && HHMM.test(d.endTime)), {
+    message: "รูปแบบเวลาไม่ถูกต้อง (HH:MM)",
     path: ["endTime"],
   })
+  .refine(
+    (d) => d.allDay || !d.startTime || !d.endTime || d.startTime < d.endTime,
+    {
+      message: "เวลาเริ่มต้องก่อนเวลาสิ้นสุด",
+      path: ["endTime"],
+    },
+  )
   .refine(
     (d) => {
       // Reject past dates (past = strictly before today Bangkok calendar)

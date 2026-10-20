@@ -1,5 +1,13 @@
 "use client";
 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { formatInTimeZone } from "date-fns-tz";
@@ -349,14 +357,22 @@ export function LineSettingsManager({ initial }: Props) {
               >
                 เวลาส่ง
               </Label>
-              <Input
-                id="summary-time"
-                type="time"
-                className="w-36"
+              <Select
                 value={summaryTime}
-                onChange={(e) => setSummaryTime(e.target.value)}
+                onValueChange={setSummaryTime}
                 disabled={!summaryEnabled || busy !== null}
-              />
+              >
+                <SelectTrigger id="summary-time" className="w-36">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {["06:00", "07:00", "08:00", "09:00"].map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t} น.
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <p className="text-xs text-muted-foreground">

@@ -23,7 +23,7 @@ import { toBangkokIsoString } from "@/lib/datetime";
  *   400 - Validation failed / Turnstile invalid
  *   404 - Service not found or inactive
  *   409 - Slot already booked (race condition)
- *   422 - Past date / beyond advance limit
+ *   422 - Past date / beyond advance limit / slot not bookable (closed, blocked)
  *   500 - Unexpected server error
  */
 export async function POST(request: Request) {
@@ -144,6 +144,7 @@ function mapBookingErrorStatus(code: BookingError["code"]): number {
       return 409;
     case "PAST_DATE":
     case "BEYOND_ADVANCE_LIMIT":
+    case "SLOT_UNAVAILABLE":
       return 422;
     case "CODE_GENERATION_FAILED":
       return 500;

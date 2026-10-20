@@ -4,9 +4,9 @@
  * Recurring patterns = out of MVP scope.
  */
 
-import { asc, eq, gte } from "drizzle-orm";
+import { and, asc, eq, gt, gte, lt, notInArray } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { blockedSlots } from "@/lib/db/schema";
+import { blockedSlots, bookings } from "@/lib/db/schema";
 import type { BlockedSlot } from "@/lib/db/schema";
 
 /**
@@ -43,6 +43,40 @@ export async function createBlockedSlot(
     })
     .returning();
   return created;
+}
+
+export interface OverlappingBooking {
+  code: string;
+  customerName: string;
+  customerPhone: string;
+  startsAt: Date;
+}
+
+/**
+ * คิวที่ยังใช้งาน (ไม่นับ cancelled / no-show) ที่ทับช่วง [start, end)
+ * ใช้เตือนก่อนเพิ่มวันหยุด — ไม่ยกเลิกให้อัตโนมัติ (ร้านติดต่อลูกค้าเอง)
+ */
+export async function getOverlappingBookings(
+  start: Date,
+  end: Date,
+): Promise<OverlappingBooking[]> {
+  const db = await getDb();
+  return db
+    .select({
+      code: bookings.code,
+      customerName: bookings.customerName,
+      customerPhone: bookings.customerPhone,
+      startsAt: bookings.startsAt,
+    })
+    .from(bookings)
+    .where(
+      and(
+        lt(bookings.startsAt, end),
+        gt(bookings.endsAt, start),
+        notInArray(bookings.status, ["cancelled", "no-show"]),
+      ),
+    )
+    .orderBy(asc(bookings.startsAt));
 }
 
 /**

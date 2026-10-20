@@ -29,7 +29,7 @@ import {
   getBangkokMonthRange,
   BANGKOK_TZ,
 } from "@/lib/datetime";
-import { hasBookingConflict } from "./availability";
+import { getAvailableSlots, hasBookingConflict } from "./availability";
 import { generateBookingCode } from "@/lib/nanoid";
 import type { AdminBookingFilter } from "@/lib/validations";
 import { formatInTimeZone } from "date-fns-tz";
@@ -64,6 +64,7 @@ export class BookingError extends Error {
     public code:
       | "SERVICE_NOT_FOUND"
       | "SLOT_CONFLICT"
+      | "SLOT_UNAVAILABLE"
       | "PAST_DATE"
       | "BEYOND_ADVANCE_LIMIT"
       | "CODE_GENERATION_FAILED",
@@ -89,6 +90,8 @@ const CODE_RETRY_ATTEMPTS = 3;
  *   2. Compute starts_at/ends_at from date/time + service duration
  *   3. Validate advance booking limit (30 days)
  *   4. Check race-condition conflict
+ *   4b. Slot must be bookable — same rules as the time picker
+ *       (business hours, closed day, blocked slots, 30-min grid)
  *   5. Generate unique code (retry on collision)
  *   6. INSERT with snapshot (price + duration frozen at booking time)
  *
@@ -138,6 +141,22 @@ export async function createBooking(
   // ─── Step 4: Race-condition guard ─────────────────────────
   if (await hasBookingConflict(startsAt, endsAt)) {
     throw new BookingError("SLOT_CONFLICT", "ช่วงเวลานี้ถูกจองไปแล้ว");
+  }
+
+  // ─── Step 4b: Slot must still be bookable ─────────────────
+  // หน้าเว็บซ่อนช่องที่จองไม่ได้อยู่แล้ว แต่ต้องเช็คซ้ำที่ server เพราะ:
+  //   - หน้าเว็บเปิดค้างไว้ ก่อนร้านเพิ่มวันหยุด/ปิดวันนั้น
+  //   - มีคนยิง API ตรง
+  // ใช้ตัวคำนวณเดียวกับหน้าเว็บ → กฎตรงกันเสมอ
+  const slots = await getAvailableSlots(service.id, input.date);
+  const isBookable = slots.some(
+    (s) => s.start.getTime() === startsAt.getTime(),
+  );
+  if (!isBookable) {
+    throw new BookingError(
+      "SLOT_UNAVAILABLE",
+      "ช่วงเวลานี้ไม่เปิดรับจอง กรุณาเลือกเวลาใหม่",
+    );
   }
 
   // ─── Step 5-6: Generate code + insert (retry on collision) ─

@@ -110,7 +110,7 @@ export function BlockedSlotsManager({ initialSlots, canEdit = true }: Props) {
                           {format(start, "d MMM yyyy")}
                         </div>
                         <div className="text-sm text-muted-foreground mt-0.5">
-                          {format(start, "HH:mm")} - {format(end, "HH:mm")}
+                          {timeLabel(start, end)}
                         </div>
                         {s.reason && (
                           <div className="text-sm mt-2 break-words">
@@ -168,7 +168,7 @@ export function BlockedSlotsManager({ initialSlots, canEdit = true }: Props) {
                           {format(start, "d MMM yyyy")}
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-sm">
-                          {format(start, "HH:mm")} - {format(end, "HH:mm")}
+                          {timeLabel(start, end)}
                         </TableCell>
                         <TableCell className="text-sm">
                           {s.reason ?? (
@@ -204,4 +204,10 @@ export function BlockedSlotsManager({ initialSlots, canEdit = true }: Props) {
       <BlockedSlotFormDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </>
   );
+}
+
+/** ครอบ ≥ 24 ชม. (ปิดทั้งวัน 00:00 → 00:00) แสดงว่า "ทั้งวัน" แทน "00:00 - 00:00" */
+function timeLabel(start: Date, end: Date): string {
+  if (end.getTime() - start.getTime() >= 24 * 60 * 60 * 1000) return "ทั้งวัน";
+  return `${format(start, "HH:mm")} - ${format(end, "HH:mm")}`;
 }

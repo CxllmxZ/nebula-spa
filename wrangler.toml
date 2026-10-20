@@ -22,4 +22,4 @@ NEXT_PUBLIC_TURNSTILE_SITE_KEY = "0x4AAAAAAEYUSK9NyWXTlUxn"
 LINE_ENABLED = "true"
 
 [triggers]
-crons = ["*/15 * * * *"]
+crons = ["0 23,0-2 * * *"]
