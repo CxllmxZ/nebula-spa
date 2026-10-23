@@ -4,11 +4,29 @@ import { cn } from "@/lib/utils";
 
 type Slot = { start: string; end: string };
 
+export type DayClosureDTO =
+  | { reason: "weekly"; label: string }
+  | { reason: "holiday"; label: string | null };
+
 type Props = {
   slots: Slot[];
+  closure?: DayClosureDTO | null;
   selectedTime: string | null;
   onSelect: (time: string) => void;
 };
+
+/** ข้อความตอนไม่มีช่องว่าง — แยก "ร้านปิด" ออกจาก "คิวเต็ม" */
+function emptyMessage(closure: DayClosureDTO | null | undefined): string {
+  if (closure?.reason === "weekly") {
+    return `ร้านปิดทุกวัน${closure.label} — ลองเลือกวันอื่น`;
+  }
+  if (closure?.reason === "holiday") {
+    return closure.label
+      ? `ร้านปิดวันนี้: ${closure.label} — ลองเลือกวันอื่น`
+      : "ร้านปิดวันนี้ — ลองเลือกวันอื่น";
+  }
+  return "ไม่มีเวลาว่างในวันนี้ — ลองเลือกวันอื่น";
+}
 
 function extractHour(iso: string): number {
   return parseInt(iso.slice(11, 13), 10);
@@ -18,11 +36,11 @@ function extractTime(iso: string): string {
   return iso.slice(11, 16);
 }
 
-export function TimePicker({ slots, selectedTime, onSelect }: Props) {
+export function TimePicker({ slots, closure, selectedTime, onSelect }: Props) {
   if (slots.length === 0) {
     return (
       <div className="rounded-xl border border-primary/10 bg-background/30 p-8 text-center text-sm text-foreground/60">
-        ไม่มีเวลาว่างในวันนี้ ลองเลือกวันอื่น
+        {emptyMessage(closure)}
       </div>
     );
   }

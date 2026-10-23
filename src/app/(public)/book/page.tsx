@@ -1,14 +1,29 @@
+import { formatInTimeZone } from "date-fns-tz";
 import { getActiveServices } from "@/lib/db/queries/services";
+import { getClosuresInRange } from "@/lib/db/queries/availability";
+import { BANGKOK_TZ } from "@/lib/datetime";
+import { ADVANCE_BOOKING_DAYS } from "@/lib/booking-rules";
 import { BookingFlow } from "./_components/booking-flow";
 
+// Skip static prerender — booking page ต้อง render at request time
+// เพราะ services/วันปิดจาก D1 = mutable + ?service query param = dynamic
 export const dynamic = "force-dynamic";
+
+/** วันนี้ + ADVANCE_BOOKING_DAYS (รวมวันนี้) */
+const CALENDAR_DAYS = ADVANCE_BOOKING_DAYS + 1;
 
 type PageProps = {
   searchParams: Promise<{ service?: string }>;
 };
 
 export default async function BookPage({ searchParams }: PageProps) {
-  const services = await getActiveServices();
+  const today = formatInTimeZone(new Date(), BANGKOK_TZ, "yyyy-MM-dd");
+
+  const [services, closures] = await Promise.all([
+    getActiveServices(),
+    getClosuresInRange(today, CALENDAR_DAYS),
+  ]);
+
   const params = await searchParams;
   const preselectedId = params.service ? Number(params.service) : null;
   const validPreselected =
@@ -31,6 +46,7 @@ export default async function BookPage({ searchParams }: PageProps) {
       <BookingFlow
         services={services}
         preselectedServiceId={validPreselected}
+        closedDates={Object.keys(closures)}
       />
     </div>
   );

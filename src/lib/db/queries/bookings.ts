@@ -33,6 +33,7 @@ import { getAvailableSlots, hasBookingConflict } from "./availability";
 import { generateBookingCode } from "@/lib/nanoid";
 import type { AdminBookingFilter } from "@/lib/validations";
 import { formatInTimeZone } from "date-fns-tz";
+import { ADVANCE_BOOKING_DAYS } from "@/lib/booking-rules";
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -75,7 +76,6 @@ export class BookingError extends Error {
   }
 }
 
-const ADVANCE_BOOKING_DAYS = 30;
 const CODE_RETRY_ATTEMPTS = 3;
 
 // ─────────────────────────────────────────────────────────────
@@ -88,7 +88,7 @@ const CODE_RETRY_ATTEMPTS = 3;
  * Flow:
  *   1. Fetch service — must exist + active
  *   2. Compute starts_at/ends_at from date/time + service duration
- *   3. Validate advance booking limit (30 days)
+ *   3. Validate advance booking limit (ADVANCE_BOOKING_DAYS, วันปฏิทินไทย)
  *   4. Check race-condition conflict
  *   4b. Slot must be bookable — same rules as the time picker
  *       (business hours, closed day, blocked slots, 30-min grid)
@@ -128,10 +128,10 @@ export async function createBooking(
     throw new BookingError("PAST_DATE", "ไม่สามารถจองในเวลาที่ผ่านมาแล้ว");
   }
 
-  const maxAdvance = new Date(
-    now.getTime() + ADVANCE_BOOKING_DAYS * 24 * 60 * 60 * 1000,
-  );
-  if (startsAt > maxAdvance) {
+  // เทียบเป็นวันปฏิทิน (เหมือนหน้าเลือกวัน) — เดิมเทียบเป็นชั่วโมง ทำให้วันสุดท้าย
+  // จองช่วงเย็นไม่ได้ทั้งที่ปฏิทินให้กด
+  const todayBkk = formatInTimeZone(now, BANGKOK_TZ, "yyyy-MM-dd");
+  if (input.date > addDays(todayBkk, ADVANCE_BOOKING_DAYS)) {
     throw new BookingError(
       "BEYOND_ADVANCE_LIMIT",
       `จองล่วงหน้าได้ไม่เกิน ${ADVANCE_BOOKING_DAYS} วัน`,
@@ -243,6 +243,12 @@ export async function getBookingByCode(
 // ─────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────
+
+/** "YYYY-MM-DD" + n วัน (วันปฏิทิน ไม่มี timezone) */
+function addDays(date: string, days: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
 
 /**
  * Detect SQLite UNIQUE constraint violation.

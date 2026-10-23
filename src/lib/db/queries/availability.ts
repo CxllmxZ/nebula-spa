@@ -1,14 +1,4 @@
-import {
-  and,
-  eq,
-  gte,
-  inArray,
-  lt,
-  lte,
-  or,
-  sql,
-  notInArray,
-} from "drizzle-orm";
+import { and, eq, gt, lt, sql, notInArray } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import {
   bookings,
@@ -24,6 +14,8 @@ import {
   addMinutesToTime,
   isTimeBeforeOrEqual,
 } from "@/lib/datetime";
+// จองล่วงหน้าได้กี่วัน — availability layer คืน [] ถ้าเกินวันนี้ + ค่านี้
+import { ADVANCE_BOOKING_DAYS } from "@/lib/booking-rules";
 
 /**
  * Represents an available time slot.
@@ -34,12 +26,6 @@ export type SlotRange = {
   start: Date;
   end: Date;
 };
-
-/**
- * Maximum days in advance a customer can book.
- * Handled here (availability layer) — return [] if date > today + this
- */
-const ADVANCE_BOOKING_DAYS = 30;
 
 /**
  * Slot grid granularity in minutes.
@@ -103,29 +89,33 @@ export async function getAvailableSlots(
     return [];
   }
 
-  // ─── Step 4: Fetch existing bookings on this date ─────────
+  // ─── Step 4: Fetch existing bookings that overlap this date ─
+  // ช่วงวัน = [00:00 วันนี้, 00:00 วันถัดไป) — ไม่ใช้ "23:59:59"
+  // เพราะ bangkokDateTimeToUtc รับแค่ HH:MM → ส่งวินาทีเข้าไปได้ Invalid Date
+  // (bug Day 31→38: query ได้ 0 แถว → วันหยุดพิเศษ + คิวเดิมไม่ถูกกรองออก)
   const dayStart = bangkokDateTimeToUtc(date, "00:00");
-  const dayEnd = bangkokDateTimeToUtc(date, "23:59:59");
+  const nextDayStart = bangkokDateTimeToUtc(addDays(date, 1), "00:00");
 
   const existing = await db
     .select({ startsAt: bookings.startsAt, endsAt: bookings.endsAt })
     .from(bookings)
     .where(
       and(
-        gte(bookings.startsAt, dayStart),
-        lte(bookings.startsAt, dayEnd),
+        lt(bookings.startsAt, nextDayStart),
+        gt(bookings.endsAt, dayStart),
         notInArray(bookings.status, [...NON_BLOCKING_STATUSES]),
       ),
     );
 
-  // ─── Step 5: Fetch blocked slots on this date ─────────────
+  // ─── Step 5: Fetch blocked slots that overlap this date ───
+  // "ทับวันนี้" ไม่ใช่ "เริ่มวันนี้" → ครอบวันหยุดที่เริ่มเมื่อวาน/หลายวันติดกัน
   const blocked = await db
     .select({ startsAt: blockedSlots.startsAt, endsAt: blockedSlots.endsAt })
     .from(blockedSlots)
     .where(
       and(
-        gte(blockedSlots.startsAt, dayStart),
-        lte(blockedSlots.startsAt, dayEnd),
+        lt(blockedSlots.startsAt, nextDayStart),
+        gt(blockedSlots.endsAt, dayStart),
       ),
     );
 
@@ -225,6 +215,102 @@ function formatDateOffset(daysOffset: number): string {
     day: "2-digit",
   }).format(target);
   return bangkokDate; // en-CA locale → "YYYY-MM-DD"
+}
+
+// ─────────────────────────────────────────────────────────────
+// Day closures — กฎ "วันไหนร้านปิดทั้งวัน" ที่เดียวของทั้งระบบ
+// ใช้โดย: หน้าจอง (ปฏิทิน + ข้อความ), แจ้งกลุ่ม LINE, สรุปเช้า
+// ─────────────────────────────────────────────────────────────
+
+export type DayClosure =
+  | { reason: "weekly"; label: string } // label = ชื่อวัน เช่น "เสาร์"
+  | { reason: "holiday"; label: string | null }; // label = เหตุผลที่ร้านใส่
+
+const THAI_WEEKDAYS = [
+  "อาทิตย์",
+  "จันทร์",
+  "อังคาร",
+  "พุธ",
+  "พฤหัสบดี",
+  "ศุกร์",
+  "เสาร์",
+];
+
+/**
+ * วันที่ร้านปิดทั้งวัน ในช่วง [fromDate, fromDate + days)
+ *
+ * ปิดทั้งวัน เมื่ออย่างใดอย่างหนึ่ง:
+ *   1. เวลาทำการวันนั้นปิด (is_closed หรือไม่มีเวลาเปิด-ปิด)
+ *   2. มีวันหยุดพิเศษ 1 รายการที่ครอบเวลาเปิดทั้งหมด
+ * ปิดแค่บางช่วง = ร้านยังเปิด
+ *
+ * ข้อจำกัด: ดูทีละรายการ — วันหยุดหลายช่วงต่อกันจนเต็มวัน ยังนับว่าเปิด
+ *
+ * Query 2 ครั้งไม่ว่าช่วงยาวแค่ไหน (เวลาทำการ 7 แถว + วันหยุดในช่วง)
+ *
+ * @returns map "YYYY-MM-DD" → เหตุผล (วันที่ไม่อยู่ใน map = เปิด)
+ */
+export async function getClosuresInRange(
+  fromDate: string,
+  days: number,
+): Promise<Record<string, DayClosure>> {
+  const db = await getDb();
+  const rangeStart = bangkokDateTimeToUtc(fromDate, "00:00");
+  const rangeEnd = bangkokDateTimeToUtc(addDays(fromDate, days), "00:00");
+
+  const [allHours, blocks] = await Promise.all([
+    db.select().from(businessHours),
+    db
+      .select({
+        startsAt: blockedSlots.startsAt,
+        endsAt: blockedSlots.endsAt,
+        reason: blockedSlots.reason,
+      })
+      .from(blockedSlots)
+      .where(
+        and(
+          lt(blockedSlots.startsAt, rangeEnd),
+          gt(blockedSlots.endsAt, rangeStart),
+        ),
+      ),
+  ]);
+
+  const hoursByDay = new Map(allHours.map((h) => [h.dayOfWeek, h]));
+  const result: Record<string, DayClosure> = {};
+
+  for (let i = 0; i < days; i++) {
+    const date = addDays(fromDate, i);
+    const dow = getBangkokDayOfWeek(date);
+    const hours = hoursByDay.get(dow);
+
+    if (!hours || hours.isClosed || !hours.openTime || !hours.closeTime) {
+      result[date] = { reason: "weekly", label: THAI_WEEKDAYS[dow] };
+      continue;
+    }
+
+    const openAt = bangkokDateTimeToUtc(date, hours.openTime);
+    const closeAt = bangkokDateTimeToUtc(date, hours.closeTime);
+    const fullDay = blocks.find(
+      (b) => b.startsAt <= openAt && b.endsAt >= closeAt,
+    );
+    if (fullDay) {
+      result[date] = { reason: "holiday", label: fullDay.reason };
+    }
+  }
+
+  return result;
+}
+
+/** วันนั้นร้านปิดทั้งวันไหม — null = เปิด */
+export async function getDayClosure(date: string): Promise<DayClosure | null> {
+  const closures = await getClosuresInRange(date, 1);
+  return closures[date] ?? null;
+}
+
+/** "YYYY-MM-DD" + n วัน (วันปฏิทิน ไม่มี timezone) */
+function addDays(date: string, days: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 }
 
 /**

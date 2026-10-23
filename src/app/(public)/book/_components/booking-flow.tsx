@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 import { StepSection } from "./step-section";
 import { ServicePicker } from "./service-picker";
 import { DatePickerStep } from "./date-picker-step";
-import { TimePicker } from "./time-picker";
+import { TimePicker, type DayClosureDTO } from "./time-picker";
 import { CustomerForm } from "@/app/(public)/book/_components/customer-form";
 
 type Service = {
@@ -21,6 +21,8 @@ type Slot = { start: string; end: string };
 type Props = {
   services: Service[];
   preselectedServiceId: number | null;
+  /** วันที่ร้านปิดทั้งวันใน 30 วันข้างหน้า (YYYY-MM-DD) — คำนวณฝั่ง server */
+  closedDates: string[];
 };
 
 function formatThaiDate(ymd: string): string {
@@ -33,13 +35,18 @@ function formatThaiDate(ymd: string): string {
   });
 }
 
-export function BookingFlow({ services, preselectedServiceId }: Props) {
+export function BookingFlow({
+  services,
+  preselectedServiceId,
+  closedDates,
+}: Props) {
   const [serviceId, setServiceId] = useState<number | null>(
     preselectedServiceId,
   );
   const [date, setDate] = useState<string | null>(null);
   const [time, setTime] = useState<string | null>(null);
   const [slots, setSlots] = useState<Slot[]>([]);
+  const [closure, setClosure] = useState<DayClosureDTO | null>(null);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
@@ -58,13 +65,20 @@ export function BookingFlow({ services, preselectedServiceId }: Props) {
     fetch(`/api/availability?serviceId=${serviceId}&date=${date}`)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json() as Promise<{ slots: Slot[] }>;
+        return r.json() as Promise<{
+          slots: Slot[];
+          closure?: DayClosureDTO | null;
+        }>;
       })
-      .then((data) => setSlots(data.slots ?? []))
+      .then((data) => {
+        setSlots(data.slots ?? []);
+        setClosure(data.closure ?? null);
+      })
       .catch((err) => {
         console.error(err);
         setFetchError("ไม่สามารถโหลดเวลาว่างได้ ลองรีเฟรช");
         setSlots([]);
+        setClosure(null);
       })
       .finally(() => setLoading(false));
   }, [serviceId, date]);
@@ -111,6 +125,7 @@ export function BookingFlow({ services, preselectedServiceId }: Props) {
       >
         <DatePickerStep
           value={date}
+          closedDates={closedDates}
           onSelect={(d) => {
             setDate(d);
             setTime(null);
@@ -136,7 +151,12 @@ export function BookingFlow({ services, preselectedServiceId }: Props) {
             {fetchError}
           </div>
         ) : (
-          <TimePicker slots={slots} selectedTime={time} onSelect={setTime} />
+          <TimePicker
+            slots={slots}
+            closure={closure}
+            selectedTime={time}
+            onSelect={setTime}
+          />
         )}
       </StepSection>
 

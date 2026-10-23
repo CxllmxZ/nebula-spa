@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getAvailableSlots } from "@/lib/db/queries/availability";
+import {
+  getAvailableSlots,
+  getDayClosure,
+} from "@/lib/db/queries/availability";
 import { toBangkokIsoString, BANGKOK_TZ } from "@/lib/datetime";
 
 /**
@@ -10,7 +13,9 @@ import { toBangkokIsoString, BANGKOK_TZ } from "@/lib/datetime";
  * during booking flow).
  *
  * Response:
- *   200 { date, serviceId, timezone, slots: [{ start, end }] }
+ *   200 { date, serviceId, timezone, slots: [{ start, end }], closure }
+ *       closure = null (ร้านเปิด) | { reason: "weekly" | "holiday", label }
+ *       ใช้บอกลูกค้าว่า "ร้านปิด" ต่างจาก "คิวเต็ม"
  *   400 { error: "INVALID_INPUT", message }
  *   500 { error: "INTERNAL_ERROR" }
  */
@@ -44,6 +49,8 @@ export async function GET(request: Request) {
 
     // ─── Compute available slots ─────────────────────
     const slots = await getAvailableSlots(serviceId, date);
+    // หาเหตุผลเฉพาะตอนไม่มีช่องว่าง (มีช่อง = ร้านเปิดแน่นอน)
+    const closure = slots.length === 0 ? await getDayClosure(date) : null;
 
     // ─── Serialize Date → ISO 8601 (Bangkok offset) ──
     return NextResponse.json({
@@ -54,6 +61,7 @@ export async function GET(request: Request) {
         start: toBangkokIsoString(s.start),
         end: toBangkokIsoString(s.end),
       })),
+      closure,
     });
   } catch (error) {
     console.error("[/api/availability] error:", error);

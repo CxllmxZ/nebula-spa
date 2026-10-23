@@ -15,11 +15,8 @@
  * Caller ต้องห่อ ctx.waitUntil() เสมอ — ห้าม await บล็อก response
  */
 
-import { and, eq, gte, lte } from "drizzle-orm";
-import { getDb } from "@/lib/db";
-import { blockedSlots, businessHours } from "@/lib/db/schema";
 import { getLineSettings } from "@/lib/db/queries/line";
-import { bangkokDateTimeToUtc, getBangkokDayOfWeek } from "@/lib/datetime";
+import { getDayClosure } from "@/lib/db/queries/availability";
 import { pushLineText, formatBangkokDate, formatBangkokTime } from "@/lib/line";
 
 // ─────────────────────────────────────────────────────────────
@@ -137,43 +134,13 @@ export async function isShopClosedToday(): Promise<boolean> {
 }
 
 /**
- * วันนั้นร้านปิดทั้งวันไหม (นิยามตามแผน):
- *   1. business_hours ของวันนั้น is_closed (หรือไม่มีเวลาเปิด-ปิด)
- *   2. มี blocked_slot ที่ครอบเวลาเปิดทั้งหมดของวันนั้น
- * บล็อกแค่บางช่วง = ร้านยังเปิด
- *
- * ข้อจำกัด: ดูทีละบล็อก — ถ้าเจ้าของบล็อกหลายช่วงต่อกันจนเต็มวัน จะยังนับว่าเปิด
+ * วันนั้นร้านปิดทั้งวันไหม — กฎอยู่ที่ getDayClosure (availability.ts) ที่เดียว
+ * เพื่อให้หน้าจอง / แจ้งกลุ่ม / สรุปเช้า ใช้นิยามเดียวกันเสมอ
  *
  * @param date "YYYY-MM-DD" เวลาไทย
  */
 export async function isShopClosedOn(date: string): Promise<boolean> {
-  const db = await getDb();
-
-  const [hours] = await db
-    .select()
-    .from(businessHours)
-    .where(eq(businessHours.dayOfWeek, getBangkokDayOfWeek(date)))
-    .limit(1);
-
-  if (!hours || hours.isClosed || !hours.openTime || !hours.closeTime) {
-    return true;
-  }
-
-  const openAt = bangkokDateTimeToUtc(date, hours.openTime);
-  const closeAt = bangkokDateTimeToUtc(date, hours.closeTime);
-
-  const [fullDayBlock] = await db
-    .select({ id: blockedSlots.id })
-    .from(blockedSlots)
-    .where(
-      and(
-        lte(blockedSlots.startsAt, openAt),
-        gte(blockedSlots.endsAt, closeAt),
-      ),
-    )
-    .limit(1);
-
-  return !!fullDayBlock;
+  return (await getDayClosure(date)) !== null;
 }
 
 // ─────────────────────────────────────────────────────────────

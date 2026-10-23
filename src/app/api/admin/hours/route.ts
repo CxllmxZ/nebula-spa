@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth-guard";
 import { businessHoursUpdateSchema } from "@/lib/validations";
-import { getAllHours, updateAllHours } from "@/lib/db/queries/business-hours";
+import {
+  getAllHours,
+  getBookingsAffectedByHours,
+  updateAllHours,
+} from "@/lib/db/queries/business-hours";
+import { toBangkokIsoString } from "@/lib/datetime";
 
 /**
  * GET /api/admin/hours
@@ -31,6 +36,11 @@ export async function GET(request: Request) {
  * PUT /api/admin/hours
  * Replace all 7 rows atomically (batch delete + insert).
  * Admin only.
+ *
+ * มีคิวในอนาคตที่จะหลุดนอกเวลาใหม่ + ยังไม่ confirmOverlap
+ * → 409 { code: "OVERLAP", overlaps: [...] } (รูปแบบเดียวกับหน้าวันหยุด)
+ * หน้าเว็บโชว์รายชื่อแล้วส่งซ้ำพร้อม confirmOverlap: true
+ * คิวเดิมไม่ถูกยกเลิก — ร้านติดต่อลูกค้าเอง
  */
 export async function PUT(request: Request) {
   try {
@@ -69,6 +79,29 @@ export async function PUT(request: Request) {
       closeTime: h.isClosed ? null : (h.closeTime ?? null),
       isClosed: h.isClosed,
     }));
+
+    // อ่านแยกจาก schema → ไม่ต้องแก้ validations.ts (Zod ตัด key ที่ไม่รู้จักทิ้ง)
+    const confirmOverlap =
+      typeof body === "object" &&
+      body !== null &&
+      (body as { confirmOverlap?: unknown }).confirmOverlap === true;
+
+    if (!confirmOverlap) {
+      const overlaps = await getBookingsAffectedByHours(normalized);
+      if (overlaps.length > 0) {
+        return NextResponse.json(
+          {
+            error: `มีคิวที่จองไว้แล้ว ${overlaps.length} คิว อยู่นอกเวลาทำการใหม่`,
+            code: "OVERLAP",
+            overlaps: overlaps.map((b) => ({
+              ...b,
+              startsAt: toBangkokIsoString(b.startsAt),
+            })),
+          },
+          { status: 409 },
+        );
+      }
+    }
 
     const updated = await updateAllHours(normalized);
     return NextResponse.json({ hours: updated });
