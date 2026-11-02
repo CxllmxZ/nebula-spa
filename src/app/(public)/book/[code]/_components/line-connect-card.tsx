@@ -1,11 +1,38 @@
 "use client";
 
-import { useState } from "react";
-import { Check, Lock, Rocket, UserPlus } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, Loader2, Lock, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+type Liff = (typeof import("@line/liff"))["default"];
+
+/**
+ * การ์ดเชื่อม LINE บนหน้ายืนยันการจอง (Day 40 — ใช้งานจริง)
+ *
+ * 01 เชื่อม LINE : LIFF login → ส่ง ID token ให้ server ตรวจ → ผูกกับคิว
+ * 02 เพิ่มเพื่อน  : ถ้ายังไม่เป็นเพื่อน OA → ปุ่มแอดเพื่อน (แอดแล้ว webhook ส่งรายละเอียดให้)
+ * 03 เสร็จ       : ได้ข้อความรายละเอียด + ปุ่มยกเลิกทาง LINE
+ *
+ * หลัง liff.login() LINE พากลับมาหน้าเดิม → mount ใหม่ → init แล้วเห็นว่า login แล้ว → ผูกต่ออัตโนมัติ
+ */
 
 type FlowState = "initial" | "authed" | "complete";
 type StepStatus = "locked" | "active" | "complete";
+
+const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID ?? "";
+const OA_BASIC_ID = process.env.NEXT_PUBLIC_LINE_OA_BASIC_ID ?? "";
+const ADD_FRIEND_URL = OA_BASIC_ID
+  ? `https://line.me/R/ti/p/${encodeURIComponent(OA_BASIC_ID)}`
+  : "";
+
+const LINK_ERRORS: Record<string, string> = {
+  LINKED_TO_OTHER: "คิวนี้เชื่อมกับ LINE บัญชีอื่นไปแล้ว",
+  PHONE_TAKEN:
+    "เบอร์โทรนี้เชื่อมกับ LINE บัญชีอื่นไปแล้ว — ติดต่อร้านเพื่อเปลี่ยนบัญชี",
+  CLOSED: "คิวนี้ถูกยกเลิกหรือเลยเวลานัดแล้ว",
+  NOT_FOUND: "ไม่พบคิวนี้",
+  INVALID_TOKEN: "การเข้าสู่ระบบ LINE หมดอายุ — กดเชื่อมอีกครั้ง",
+};
 
 function LineIcon({ className = "" }: { className?: string }) {
   return (
@@ -20,59 +47,130 @@ function LineIcon({ className = "" }: { className?: string }) {
   );
 }
 
-export function LineConnectCard() {
-  const [state, setState] = useState<FlowState>("initial");
-  const showPreviewToggle = process.env.NEXT_PUBLIC_LINE_PREVIEW === "true";
+type Props = {
+  code: string;
+  /** คิวนี้ผูก LINE ไว้แล้ว (จาก server) */
+  initialLinked: boolean;
+};
+
+export function LineConnectCard({ code, initialLinked }: Props) {
+  const [state, setState] = useState<FlowState>(
+    initialLinked ? "authed" : "initial",
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [skipped, setSkipped] = useState(false);
+  const liffRef = useRef<Liff | null>(null);
+
+  /** โหลด SDK เฉพาะตอนใช้ (ไม่ถ่วงหน้าแรก) + init ครั้งเดียว */
+  const getLiff = useCallback(async (): Promise<Liff> => {
+    if (liffRef.current) return liffRef.current;
+    const liff = (await import("@line/liff")).default;
+    await liff.init({ liffId: LIFF_ID });
+    liffRef.current = liff;
+    return liff;
+  }, []);
+
+  /** login แล้ว → ส่ง ID token ให้ server ผูก → เช็คว่าเป็นเพื่อน OA หรือยัง */
+  const linkAndCheckFriend = useCallback(
+    async (liff: Liff) => {
+      const idToken = liff.getIDToken();
+      if (!idToken) throw new Error("INVALID_TOKEN");
+
+      const res = await fetch("/api/line/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, idToken }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { code?: string };
+        if (data.code === "INVALID_TOKEN") liff.logout(); // ให้ login ใหม่ได้
+        throw new Error(data.code ?? "UNKNOWN");
+      }
+
+      const { friendFlag } = await liff.getFriendship();
+      setState(friendFlag ? "complete" : "authed");
+    },
+    [code],
+  );
+
+  // กลับมาจากหน้า login ของ LINE → ทำต่ออัตโนมัติ
+  useEffect(() => {
+    if (!LIFF_ID) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const liff = await getLiff();
+        if (cancelled || !liff.isLoggedIn()) return;
+        setBusy(true);
+        await linkAndCheckFriend(liff);
+      } catch (err) {
+        if (!cancelled) setError(toMessage(err));
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [getLiff, linkAndCheckFriend]);
+
+  async function handleConnect() {
+    setError(null);
+    setBusy(true);
+    try {
+      const liff = await getLiff();
+      if (!liff.isLoggedIn()) {
+        // ไปหน้า LINE แล้วกลับมาที่หน้านี้ → useEffect ทำต่อ
+        liff.login({ redirectUri: window.location.href });
+        return;
+      }
+      await linkAndCheckFriend(liff);
+    } catch (err) {
+      setError(toMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRecheckFriend() {
+    setError(null);
+    setBusy(true);
+    try {
+      const liff = await getLiff();
+      if (!liff.isLoggedIn()) {
+        // ผูกไว้จากเครื่องอื่น → ไม่รู้สถานะเพื่อน ถือว่าเสร็จ (แอดเมื่อไหร่ webhook ส่งให้)
+        setState("complete");
+        return;
+      }
+      const { friendFlag } = await liff.getFriendship();
+      if (friendFlag) setState("complete");
+      else
+        setError("ยังไม่พบการเพิ่มเพื่อน — กดเพิ่มเพื่อนก่อน แล้วลองอีกครั้ง");
+    } catch (err) {
+      setError(toMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!LIFF_ID) return null; // ยังไม่ได้ตั้งค่า LIFF → ไม่โชว์การ์ด
 
   const authStatus: StepStatus = state === "initial" ? "active" : "complete";
   const friendStatus: StepStatus =
     state === "initial" ? "locked" : state === "authed" ? "active" : "complete";
 
-  const stateLabels: Record<FlowState, string> = {
-    initial: "1 · เริ่มต้น",
-    authed: "2 · Auth ผ่าน",
-    complete: "3 · เชื่อมครบ",
-  };
-
   return (
     <div className="mt-6">
-      {showPreviewToggle && (
-        <div className="mb-4">
-          <div className="mb-2 text-xs uppercase tracking-widest text-foreground/40">
-            Preview mode
-          </div>
-          <div className="flex gap-1.5 rounded-full border border-primary/10 bg-background/40 p-1">
-            {(["initial", "authed", "complete"] as FlowState[]).map((s) => {
-              const active = state === s;
-              return (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setState(s)}
-                  className={cn(
-                    "flex-1 cursor-pointer rounded-full px-3 py-2 text-[13px] tracking-wide transition-all",
-                    active
-                      ? "bg-primary font-medium text-primary-foreground"
-                      : "text-foreground/60 hover:bg-primary/10 hover:text-foreground",
-                  )}
-                >
-                  {stateLabels[s]}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       <div className="space-y-3">
         {/* Step 01: Auth */}
         <StepShell
           number="01"
           title="เชื่อม LINE"
           status={authStatus}
-          summary="เชื่อมต่อ LINE สำเร็จ · @nebulaspa รู้จักคุณแล้ว"
+          summary="เชื่อม LINE กับการจองนี้แล้ว"
         >
-          <AuthStepContent />
+          <AuthStepContent busy={busy} onConnect={handleConnect} />
         </StepShell>
 
         {/* Step 02: Add Friend */}
@@ -80,16 +178,41 @@ export function LineConnectCard() {
           number="02"
           title="เพิ่มเพื่อน"
           status={friendStatus}
-          summary="เพิ่ม @nebulaspa เป็นเพื่อนแล้ว"
+          summary={`เพิ่ม ${OA_BASIC_ID} เป็นเพื่อนแล้ว`}
         >
-          <FriendStepContent />
+          {skipped ? (
+            <p className="text-sm tracking-wide text-foreground/70">
+              เพิ่มเพื่อนภายหลังได้ —
+              ระบบจะส่งรายละเอียดการจองให้ทันทีที่เพิ่มเพื่อน
+            </p>
+          ) : (
+            <FriendStepContent
+              busy={busy}
+              onRecheck={handleRecheckFriend}
+              onSkip={() => setSkipped(true)}
+            />
+          )}
         </StepShell>
 
-        {/* Step 03: Complete (only when everything done) */}
+        {/* Step 03: Complete */}
         {state === "complete" && <CompleteCard />}
+
+        {error && (
+          <p
+            role="alert"
+            className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm tracking-wide text-foreground/90"
+          >
+            {error}
+          </p>
+        )}
       </div>
     </div>
   );
+}
+
+function toMessage(err: unknown): string {
+  const key = err instanceof Error ? err.message : "";
+  return LINK_ERRORS[key] ?? "เชื่อม LINE ไม่สำเร็จ — ลองใหม่อีกครั้ง";
 }
 
 /* ─── Shared step wrapper ─── */
@@ -152,7 +275,13 @@ function StepShell({
 }
 
 /* ─── Step 01 content ─── */
-function AuthStepContent() {
+function AuthStepContent({
+  busy,
+  onConnect,
+}: {
+  busy: boolean;
+  onConnect: () => void;
+}) {
   return (
     <>
       <div className="mb-4 flex items-center gap-3">
@@ -161,19 +290,18 @@ function AuthStepContent() {
         </div>
         <div>
           <p className="text-sm tracking-wide text-foreground/80">
-            เชื่อม LINE เพื่อรับการแจ้งเตือน
+            รับรายละเอียดการจองทาง LINE
           </p>
           <p className="mt-0.5 text-[12px] tracking-wide text-foreground/50">
-            ยืนยันด่วนก่อนถึงเวลา · ฟรี
+            ฟรี · ใช้เวลาไม่ถึงนาที
           </p>
         </div>
       </div>
 
       <ul className="mb-5 space-y-1.5 text-sm tracking-wide text-foreground/80">
         {[
-          "แจ้งเตือน 6 ชม. ก่อนถึงเวลา",
-          "ยืนยัน/ยกเลิกจาก LINE",
-          "ส่วนลด 10% ครั้งถัดไป",
+          "เก็บรายละเอียดการจองไว้ในแชท ไม่ต้องจำรหัส",
+          "ยกเลิกได้จาก LINE ไม่ต้องโทร",
         ].map((b) => (
           <li key={b} className="flex items-baseline gap-2">
             <Check
@@ -185,16 +313,26 @@ function AuthStepContent() {
         ))}
       </ul>
 
-      <ConnectButton
+      <ActionButton
         label="เชื่อม LINE"
         icon={<LineIcon className="h-4 w-4" />}
+        busy={busy}
+        onClick={onConnect}
       />
     </>
   );
 }
 
 /* ─── Step 02 content ─── */
-function FriendStepContent() {
+function FriendStepContent({
+  busy,
+  onRecheck,
+  onSkip,
+}: {
+  busy: boolean;
+  onRecheck: () => void;
+  onSkip: () => void;
+}) {
   return (
     <>
       <div className="mb-4 flex items-center gap-3">
@@ -204,23 +342,36 @@ function FriendStepContent() {
         <div>
           <p className="text-sm tracking-wide text-foreground/80">
             เพิ่มร้าน{" "}
-            <span className="font-medium text-primary">@nebulaspa</span>{" "}
+            <span className="font-medium text-primary">{OA_BASIC_ID}</span>{" "}
             เป็นเพื่อน
           </p>
           <p className="mt-0.5 text-[12px] tracking-wide text-foreground/50">
-            เพื่อให้ระบบส่งข้อความหาคุณได้
+            เพื่อให้ร้านส่งรายละเอียดการจองหาคุณได้
           </p>
         </div>
       </div>
 
-      <ConnectButton
-        label="เพิ่มเพื่อน"
-        icon={<UserPlus className="h-4 w-4" strokeWidth={2} />}
-      />
+      <a
+        href={ADD_FRIEND_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="relative flex w-full items-center justify-center gap-2 rounded-full bg-[#06C755] px-4 py-3.5 text-sm font-medium tracking-[0.14em] text-white transition-opacity hover:opacity-90"
+      >
+        <UserPlus className="h-4 w-4" strokeWidth={2} />
+        เพิ่มเพื่อน
+      </a>
       <button
         type="button"
-        disabled
-        className="mt-1 w-full px-2 py-2.5 text-[13px] tracking-wide text-foreground/40 disabled:cursor-not-allowed"
+        onClick={onRecheck}
+        disabled={busy}
+        className="mt-2 w-full px-2 py-2.5 text-[13px] tracking-wide text-primary disabled:opacity-50"
+      >
+        {busy ? "กำลังตรวจสอบ..." : "เพิ่มแล้ว ตรวจอีกครั้ง"}
+      </button>
+      <button
+        type="button"
+        onClick={onSkip}
+        className="w-full px-2 py-2 text-[13px] tracking-wide text-foreground/40 hover:text-foreground/60"
       >
         ข้ามไปก่อน
       </button>
@@ -244,11 +395,11 @@ function CompleteCard() {
               03
             </span>
             <h3 className="font-serif text-base font-medium tracking-wide text-foreground md:text-lg">
-              พร้อมรับการแจ้งเตือน
+              เชื่อมครบแล้ว
             </h3>
           </div>
           <p className="mt-1.5 text-sm tracking-wide text-foreground/70">
-            ทุกอย่างเชื่อมครบแล้ว จะแจ้งเตือน 6 ชม. ก่อนถึงเวลา
+            ดูรายละเอียดและยกเลิกการจองได้ในแชท LINE ของร้าน
           </p>
         </div>
       </div>
@@ -256,27 +407,27 @@ function CompleteCard() {
   );
 }
 
-/* ─── Shared disabled CTA ─── */
-function ConnectButton({
+/* ─── Shared CTA ─── */
+function ActionButton({
   label,
   icon,
+  busy,
+  onClick,
 }: {
   label: string;
   icon: React.ReactNode;
+  busy: boolean;
+  onClick: () => void;
 }) {
   return (
     <button
       type="button"
-      disabled
-      title="จะเปิดใช้งานเร็วๆนี้"
-      className="relative flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-full bg-[#06C755] px-4 py-3.5 text-sm font-medium tracking-[0.14em] text-white opacity-70"
+      onClick={onClick}
+      disabled={busy}
+      className="relative flex w-full items-center justify-center gap-2 rounded-full bg-[#06C755] px-4 py-3.5 text-sm font-medium tracking-[0.14em] text-white transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-70"
     >
-      {icon}
-      {label}
-      <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[11px] tracking-widest">
-        <Rocket className="h-2.5 w-2.5" strokeWidth={2.5} />
-        เร็วๆนี้
-      </span>
+      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : icon}
+      {busy ? "กำลังเชื่อม..." : label}
     </button>
   );
 }

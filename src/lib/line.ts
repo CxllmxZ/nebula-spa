@@ -162,6 +162,64 @@ export async function replyLineText(
   await postLine(LINE_REPLY_URL, channelAccessToken, { replyToken, messages });
 }
 
+// ─────────────────────────────────────────────────────────────
+// Rich messages (Flex / template) — Day 40 ฝั่งลูกค้า
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * ข้อความ LINE แบบใดก็ได้ (text / flex / template)
+ * โครงสร้างอยู่ใน line-customer-messages.ts — ที่นี่แค่ส่ง
+ */
+export type LineMessage = { type: string } & Record<string, unknown>;
+
+/** reply ได้สูงสุด 5 ข้อความต่อครั้ง (ข้อจำกัดของ LINE) */
+const MAX_MESSAGES = 5;
+
+/** push หลายข้อความ / ข้อความมีปุ่ม — นับโควตา 1 ครั้งต่อการเรียก (ต่อผู้รับ) */
+export async function pushLineMessages(
+  channelAccessToken: string,
+  to: string,
+  messages: LineMessage[],
+  enabled: boolean = true,
+): Promise<void> {
+  if (!enabled) {
+    console.log("[LINE disabled] would push messages:", {
+      to: maskId(to),
+      types: messages.map((m) => m.type),
+    });
+    return;
+  }
+  if (!channelAccessToken || !to) {
+    throw new Error("[LINE] Missing channelAccessToken or recipient");
+  }
+  await postLine(LINE_PUSH_URL, channelAccessToken, {
+    to,
+    messages: messages.slice(0, MAX_MESSAGES),
+  });
+}
+
+/** reply หลายข้อความ / ข้อความมีปุ่ม — ไม่นับโควตา */
+export async function replyLineMessages(
+  channelAccessToken: string,
+  replyToken: string,
+  messages: LineMessage[],
+  enabled: boolean = true,
+): Promise<void> {
+  if (!enabled) {
+    console.log("[LINE disabled] would reply messages:", {
+      types: messages.map((m) => m.type),
+    });
+    return;
+  }
+  if (!channelAccessToken || !replyToken) {
+    throw new Error("[LINE] Missing channelAccessToken or replyToken");
+  }
+  await postLine(LINE_REPLY_URL, channelAccessToken, {
+    replyToken,
+    messages: messages.slice(0, MAX_MESSAGES),
+  });
+}
+
 /**
  * ให้บอทออกจากกลุ่ม — ใช้ตอนผูกกลุ่มใหม่แทนกลุ่มเดิม
  * 404 = บอทไม่อยู่ในกลุ่มแล้ว → ถือว่าสำเร็จ

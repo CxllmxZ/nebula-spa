@@ -3,6 +3,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import {
   verifyLineSignature,
   replyLineText,
+  replyLineMessages,
   pushLineText,
   leaveLineGroup,
 } from "@/lib/line";
@@ -13,6 +14,21 @@ import {
   markStaffGroupDisconnected,
   setOwnerLineUserId,
 } from "@/lib/db/queries/line";
+import {
+  canCustomerCancel,
+  cancelBookingByCustomer,
+  getBookingForLineUser,
+  getUpcomingBookingsForLineUser,
+} from "@/lib/db/queries/customer-line";
+import {
+  CANCEL_CONFIRM_TTL_MIN,
+  bookingConfirmationMessage,
+  cancelConfirmMessage,
+  isConfirmExpired,
+  parsePostbackData,
+  textMessage,
+} from "@/lib/line-customer-messages";
+import { notifyBookingEvent } from "@/lib/notify";
 
 /**
  * POST /api/webhooks/line
@@ -22,8 +38,9 @@ import {
  *   - message (group) : "#link 123456"  → ผูกกลุ่มพนักงาน / ข้อความอื่นในกลุ่ม → เงียบ
  *   - join   (group)  : บอทถูกเชิญเข้ากลุ่ม → บอกวิธีพิมพ์ #link
  *   - leave  (group)  : บอทถูกเอาออก → ถ้าเป็นกลุ่มที่ผูกไว้ → disconnected + แจ้งเจ้าของ
- *   - follow (user)   : ข้อความต้อนรับ
- *   (postback / unfollow ของลูกค้า → session ถัดไป)
+ *   - follow (user)   : ข้อความต้อนรับ + ถ้ามีคิวที่ผูก LINE ไว้ → ส่งรายละเอียด + ปุ่มยกเลิก (Day 40)
+ *   - postback (user) : ลูกค้ากดปุ่มยกเลิก → ถามซ้ำ → ยกเลิก + แจ้งร้าน (Day 40)
+ *   (unfollow → ยังไม่ทำ)
  *
  * Flow:
  *   1. อ่าน raw body (ต้องก่อน parse — ใช้ตรวจลายเซ็น)
@@ -56,7 +73,13 @@ interface LineMessageEvent extends LineEventBase {
   message: { type: string; text?: string };
 }
 
-type LineEvent = LineEventBase | LineMessageEvent;
+interface LinePostbackEvent extends LineEventBase {
+  type: "postback";
+  replyToken: string;
+  postback: { data: string };
+}
+
+type LineEvent = LineEventBase | LineMessageEvent | LinePostbackEvent;
 
 interface LineWebhookBody {
   destination: string;
@@ -146,8 +169,10 @@ async function handleEvent(event: LineEvent, ctx: Ctx): Promise<void> {
       return handleLeave(event, ctx);
     case "follow":
       return handleFollow(event, ctx);
+    case "postback":
+      return handlePostback(event as LinePostbackEvent, ctx);
     default:
-      return; // unfollow / postback ฯลฯ → session ถัดไป
+      return; // unfollow ฯลฯ → ยังไม่ทำ
   }
 }
 
@@ -245,10 +270,102 @@ async function handleLeave(event: LineEventBase, ctx: Ctx) {
 async function handleFollow(event: LineEventBase, ctx: Ctx) {
   if (event.source.type !== "user" || !event.replyToken) return;
 
-  await replyLineText(
+  // ลูกค้าที่ผูก LINE ไว้ก่อนแอดเพื่อน → push ตอนผูกไม่ผ่าน → ส่งตอนนี้แทน (reply = ฟรี)
+  const upcoming = await getUpcomingBookingsForLineUser(event.source.userId);
+
+  const welcome =
+    upcoming.length > 0
+      ? "ยินดีต้อนรับสู่ Nebula Spa 🌙\nนี่คือคิวที่คุณจองไว้ ยกเลิกได้จากปุ่มด้านล่าง"
+      : "ยินดีต้อนรับสู่ Nebula Spa 🌙\nเราจะส่งรายละเอียดคิวที่คุณจองผ่านแชทนี้";
+
+  await replyLineMessages(
     ctx.token,
     event.replyToken,
-    "ยินดีต้อนรับสู่ Nebula Spa 🌙\nเราจะแจ้งเตือนคิวที่คุณจองผ่านแชทนี้",
+    [textMessage(welcome), ...upcoming.map(bookingConfirmationMessage)],
     ctx.enabled,
   );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Postback — ลูกค้ากดปุ่มในข้อความ (Day 40)
+// ─────────────────────────────────────────────────────────────
+
+const CALL_SHOP = "กรุณาโทรหาร้านโดยตรง";
+
+async function handlePostback(event: LinePostbackEvent, ctx: Ctx) {
+  if (event.source.type !== "user") return;
+  const userId = event.source.userId;
+  const reply = (text: string) =>
+    replyLineText(ctx.token, event.replyToken, text, ctx.enabled);
+
+  const parsed = parsePostbackData(event.postback.data);
+  if (!parsed) return;
+  const { action, code, issuedAt } = parsed;
+
+  if (action === "cancel_keep") {
+    return reply("รับทราบค่ะ คิวของคุณยังอยู่ตามเดิม 🌙");
+  }
+
+  // ── ตรวจสิทธิ์: คิวต้องผูกกับ LINE นี้ ──────────────────
+  const booking = await getBookingForLineUser(code, userId);
+  if (!booking) {
+    return reply(`ไม่พบคิวนี้ในบัญชี LINE ของคุณ\n${CALL_SHOP}`);
+  }
+
+  if (action === "cancel") {
+    if (!canCustomerCancel(booking)) return reply(cannotCancelText(booking));
+    return replyLineMessages(
+      ctx.token,
+      event.replyToken,
+      [cancelConfirmMessage(booking)],
+      ctx.enabled,
+    );
+  }
+
+  // action === "cancel_confirm"
+  // ปุ่มจากข้อความถามซ้ำอันเก่า (เกิน 10 นาที) → ไม่ยกเลิก ถามใหม่แทน (กันกดพลาดย้อนหลัง)
+  if (isConfirmExpired(issuedAt)) {
+    if (!canCustomerCancel(booking)) return reply(cannotCancelText(booking));
+    return replyLineMessages(
+      ctx.token,
+      event.replyToken,
+      [
+        textMessage(
+          `ปุ่มนี้หมดอายุแล้ว (ใช้ได้ ${CANCEL_CONFIRM_TTL_MIN} นาทีหลังถาม)\nถ้ายังต้องการยกเลิก กดยืนยันอีกครั้งด้านล่าง`,
+        ),
+        cancelConfirmMessage(booking),
+      ],
+      ctx.enabled,
+    );
+  }
+
+  // ยกเลิกจริง (atomic — กดซ้ำได้ผลครั้งเดียว)
+  const cancelled = await cancelBookingByCustomer(code, userId);
+  if (!cancelled) {
+    const latest = await getBookingForLineUser(code, userId);
+    return reply(latest ? cannotCancelText(latest) : CALL_SHOP);
+  }
+
+  await reply(
+    `ยกเลิกการจอง ${cancelled.code} เรียบร้อยแล้ว ✅\nทางร้านได้รับแจ้งแล้วค่ะ ขอบคุณที่แจ้งล่วงหน้า 🙏`,
+  );
+
+  // แจ้งเจ้าของ + กลุ่ม (กติกาวันหยุด / fallback อยู่ใน notify.ts)
+  await notifyBookingEvent(
+    { type: "cancelled", booking: cancelled, by: "customer" },
+    {
+      token: ctx.token,
+      enabled: ctx.enabled,
+      fallbackOwnerId: ctx.fallbackOwnerId,
+    },
+  );
+}
+
+function cannotCancelText(b: { status: string; startsAt: Date }): string {
+  if (b.status === "cancelled") return "คิวนี้ถูกยกเลิกไปแล้วค่ะ";
+  if (b.status === "completed") return "คิวนี้ใช้บริการเรียบร้อยแล้วค่ะ";
+  if (b.startsAt.getTime() <= Date.now()) {
+    return `เลยเวลานัดแล้ว ยกเลิกผ่าน LINE ไม่ได้\n${CALL_SHOP}`;
+  }
+  return `ยกเลิกคิวนี้ผ่าน LINE ไม่ได้\n${CALL_SHOP}`;
 }

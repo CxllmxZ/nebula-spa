@@ -59,6 +59,11 @@ export default async function ConfirmationPage({ params }: PageProps) {
     notFound();
   }
 
+  // เชื่อม LINE ได้เฉพาะคิวที่ยังใช้งาน + ยังไม่ถึงเวลานัด
+  const isUpcoming =
+    (booking.status === "confirmed" || booking.status === "pending") &&
+    booking.startsAt.getTime() > Date.now();
+
   const calendarUrl = toGoogleCalendarUrl({
     serviceName: booking.serviceName,
     startsAt: booking.startsAt,
@@ -141,7 +146,12 @@ export default async function ConfirmationPage({ params }: PageProps) {
         </dl>
       </div>
 
-      <LineConnectCard />
+      {isUpcoming && (
+        <LineConnectCard
+          code={booking.code}
+          initialLinked={booking.customerId !== null}
+        />
+      )}
 
       {/* CTAs */}
       <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:gap-4">
@@ -170,7 +180,7 @@ export default async function ConfirmationPage({ params }: PageProps) {
 
       {/* Footer note */}
       <p className="mt-10 text-center text-xs tracking-wide text-foreground/50">
-        ต้องการแก้ไขหรือยกเลิก โทรติดต่อร้านโดยตรง
+        ต้องการเลื่อนนัด โทรติดต่อร้านโดยตรง · ยกเลิกได้ทาง LINE หรือโทรหาร้าน
       </p>
     </div>
   );

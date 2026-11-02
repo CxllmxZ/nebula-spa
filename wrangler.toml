@@ -20,6 +20,7 @@ migrations_dir = "drizzle/migrations"
 BETTER_AUTH_URL = "https://nebula-spa.bimav.workers.dev"
 NEXT_PUBLIC_TURNSTILE_SITE_KEY = "0x4AAAAAAEYUSK9NyWXTlUxn"
 LINE_ENABLED = "true"
+LINE_LOGIN_CHANNEL_ID = "2012343120"
 
 [triggers]
 crons = ["0 23,0-2 * * *"]

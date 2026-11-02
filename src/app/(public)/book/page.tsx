@@ -4,6 +4,7 @@ import { getClosuresInRange } from "@/lib/db/queries/availability";
 import { BANGKOK_TZ } from "@/lib/datetime";
 import { ADVANCE_BOOKING_DAYS } from "@/lib/booking-rules";
 import { BookingFlow } from "./_components/booking-flow";
+import { LiffRedirect } from "./_components/liff-redirect";
 
 // Skip static prerender — booking page ต้อง render at request time
 // เพราะ services/วันปิดจาก D1 = mutable + ?service query param = dynamic
@@ -42,6 +43,9 @@ export default async function BookPage({ searchParams }: PageProps) {
         </h1>
         <div className="mx-auto mt-8 h-px w-10 bg-primary" />
       </div>
+
+      {/* กลับมาจาก LINE login → พาไปหน้ายืนยันการจอง (Day 40) */}
+      <LiffRedirect />
 
       <BookingFlow
         services={services}

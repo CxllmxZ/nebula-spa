@@ -11,6 +11,7 @@ interface __BaseEnv_CloudflareEnv {
   LINE_CHANNEL_ACCESS_TOKEN: string;
   LINE_CHANNEL_SECRET: string;
   LINE_OWNER_USER_ID: string;
+  LINE_LOGIN_CHANNEL_ID: string;
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: string;
   TURNSTILE_SECRET_KEY: string;
   CLOUDFLARE_ACCOUNT_ID: string;
