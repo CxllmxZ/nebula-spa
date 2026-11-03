@@ -22,6 +22,13 @@
       "when": 1791900867350,
       "tag": "0002_daily_inhumans",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793712981647,
+      "tag": "0003_modern_madripoor",
+      "breakpoints": true
     }
   ]
 }

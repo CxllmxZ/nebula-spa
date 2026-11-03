@@ -17,7 +17,10 @@ import { Button } from "@/components/ui/button";
 
 import { BANGKOK_TZ } from "@/lib/datetime";
 import { formatCurrency } from "@/lib/format";
-import { BOOKING_STATUS_CONFIG } from "@/lib/booking-status";
+import {
+  BOOKING_STATUS_CONFIG,
+  CANCELLED_BY_LABEL,
+} from "@/lib/booking-status";
 import type { AdminBookingListItem } from "@/lib/db/queries/bookings";
 import type { AdminBookingFilter } from "@/lib/validations";
 import { BookingDetailDialog } from "./booking-detail-dialog";
@@ -104,6 +107,7 @@ export function BookingsTable({ bookings, meta, currentFilter }: Props) {
                     <Badge variant={cfg.variant} className="text-xs">
                       {cfg.label}
                     </Badge>
+                    <CancelledByNote booking={b} />
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mt-2 pt-2 border-t text-xs text-muted-foreground">
@@ -167,6 +171,7 @@ export function BookingsTable({ bookings, meta, currentFilter }: Props) {
                       <Badge variant={cfg.variant} className="text-xs">
                         {cfg.label}
                       </Badge>
+                      <CancelledByNote booking={b} />
                     </TableCell>
                   </TableRow>
                 );
@@ -207,5 +212,15 @@ export function BookingsTable({ bookings, meta, currentFilter }: Props) {
         onOpenChange={setDialogOpen}
       />
     </>
+  );
+}
+
+/** ใต้ป้าย "ยกเลิก" — บอกว่าใครยกเลิก (ไม่มีข้อมูล = ยกเลิกก่อนมีการบันทึก → ไม่แสดง) */
+function CancelledByNote({ booking }: { booking: AdminBookingListItem }) {
+  if (booking.status !== "cancelled" || !booking.cancelledBy) return null;
+  return (
+    <div className="mt-1 text-[11px] text-muted-foreground">
+      {CANCELLED_BY_LABEL[booking.cancelledBy].short}
+    </div>
   );
 }

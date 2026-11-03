@@ -29,6 +29,7 @@ import { formatCurrency } from "@/lib/format";
 import {
   BOOKING_STATUS_CONFIG,
   BOOKING_STATUS_LIST,
+  CANCELLED_BY_LABEL,
 } from "@/lib/booking-status";
 import type {
   AdminBookingListItem,
@@ -132,6 +133,33 @@ export function BookingDetailDialog({ booking, open, onOpenChange }: Props) {
             <div className="text-muted-foreground">สถานะปัจจุบัน</div>
             <div className="col-span-2">
               <Badge variant={currentCfg.variant}>{currentCfg.label}</Badge>
+            </div>
+
+            {booking.status === "cancelled" && booking.cancelledBy && (
+              <>
+                <div className="text-muted-foreground">ยกเลิกโดย</div>
+                <div className="col-span-2">
+                  {CANCELLED_BY_LABEL[booking.cancelledBy].full}
+                  {booking.cancelledAt && (
+                    <div className="text-xs text-muted-foreground">
+                      {formatInTimeZone(
+                        booking.cancelledAt,
+                        BANGKOK_TZ,
+                        "d MMM yyyy, HH:mm",
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            <div className="text-muted-foreground">LINE</div>
+            <div className="col-span-2">
+              {booking.lineLinked ? (
+                <span className="text-[#06C755] font-medium">เชื่อมแล้ว</span>
+              ) : (
+                <span className="text-muted-foreground">ไม่ได้เชื่อม</span>
+              )}
             </div>
 
             {booking.notes && (

@@ -13,7 +13,11 @@ type Liff = (typeof import("@line/liff"))["default"];
  * 02 เพิ่มเพื่อน  : ถ้ายังไม่เป็นเพื่อน OA → ปุ่มแอดเพื่อน (แอดแล้ว webhook ส่งรายละเอียดให้)
  * 03 เสร็จ       : ได้ข้อความรายละเอียด + ปุ่มยกเลิกทาง LINE
  *
- * หลัง liff.login() LINE พากลับมาหน้าเดิม → mount ใหม่ → init แล้วเห็นว่า login แล้ว → ผูกต่ออัตโนมัติ
+ * ความปลอดภัย (Day 41):
+ *   - เบราว์เซอร์จำ login LINE ไว้ (ปิดแท็บแล้วยังอยู่) → เครื่องที่ใช้ร่วมกัน คนต่อไปจะได้ LINE ของคนก่อน
+ *   - จึง **ไม่ผูกเงียบๆ** — โชว์ชื่อ + รูป LINE ที่จำไว้ ให้ลูกค้ากดยืนยัน หรือ "ใช้บัญชี LINE อื่น"
+ *   - ยกเว้น: เพิ่งกด "เชื่อม LINE" แล้ว login เสร็จในแท็บนี้ (มี flag ใน sessionStorage) → ผูกต่อเลย
+ *     เพราะลูกค้าเพิ่งเลือกบัญชีเองกับมือ
  */
 
 type FlowState = "initial" | "authed" | "complete";
@@ -24,6 +28,35 @@ const OA_BASIC_ID = process.env.NEXT_PUBLIC_LINE_OA_BASIC_ID ?? "";
 const ADD_FRIEND_URL = OA_BASIC_ID
   ? `https://line.me/R/ti/p/${encodeURIComponent(OA_BASIC_ID)}`
   : "";
+
+/** ตั้งก่อน liff.login() — กลับมาแล้วรู้ว่าลูกค้าเพิ่งเลือกบัญชีเอง (ผูกต่อได้ไม่ต้องถามซ้ำ) */
+const LOGIN_FLAG = (code: string) => `nebula-line-login:${code}`;
+
+function readFlag(code: string): boolean {
+  try {
+    const v = sessionStorage.getItem(LOGIN_FLAG(code));
+    sessionStorage.removeItem(LOGIN_FLAG(code));
+    return v === "1";
+  } catch {
+    return false;
+  }
+}
+
+function setFlag(code: string) {
+  try {
+    sessionStorage.setItem(LOGIN_FLAG(code), "1");
+  } catch {
+    // storage ใช้ไม่ได้ → กลับมาแล้วจะถามยืนยันแทน (ปลอดภัยกว่า)
+  }
+}
+
+/** บัญชี LINE ที่เบราว์เซอร์จำไว้ — อ่านจาก ID token ในเครื่อง (ไม่ต้องยิง API) */
+type LineIdentity = { name: string; picture: string | null };
+
+function identityOf(liff: Liff): LineIdentity {
+  const t = liff.getDecodedIDToken();
+  return { name: t?.name ?? "บัญชี LINE นี้", picture: t?.picture ?? null };
+}
 
 const LINK_ERRORS: Record<string, string> = {
   LINKED_TO_OTHER: "คิวนี้เชื่อมกับ LINE บัญชีอื่นไปแล้ว",
@@ -60,6 +93,8 @@ export function LineConnectCard({ code, initialLinked }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [skipped, setSkipped] = useState(false);
+  /** login LINE ค้างอยู่ในเบราว์เซอร์ → รอลูกค้ายืนยันว่าเป็นบัญชีของตัวเอง */
+  const [candidate, setCandidate] = useState<LineIdentity | null>(null);
   const liffRef = useRef<Liff | null>(null);
 
   /** โหลด SDK เฉพาะตอนใช้ (ไม่ถ่วงหน้าแรก) + init ครั้งเดียว */
@@ -94,7 +129,7 @@ export function LineConnectCard({ code, initialLinked }: Props) {
     [code],
   );
 
-  // กลับมาจากหน้า login ของ LINE → ทำต่ออัตโนมัติ
+  // เปิดหน้า → ดูว่าเบราว์เซอร์ login LINE ค้างอยู่ไหม
   useEffect(() => {
     if (!LIFF_ID) return;
     let cancelled = false;
@@ -102,8 +137,23 @@ export function LineConnectCard({ code, initialLinked }: Props) {
       try {
         const liff = await getLiff();
         if (cancelled || !liff.isLoggedIn()) return;
-        setBusy(true);
-        await linkAndCheckFriend(liff);
+
+        if (initialLinked) {
+          // ผูกแล้ว → แค่เช็คว่าเป็นเพื่อนหรือยัง
+          const { friendFlag } = await liff.getFriendship();
+          if (!cancelled && friendFlag) setState("complete");
+          return;
+        }
+
+        if (readFlag(code)) {
+          // เพิ่งกด "เชื่อม LINE" + login เสร็จในแท็บนี้ → ผูกต่อเลย
+          setBusy(true);
+          await linkAndCheckFriend(liff);
+          return;
+        }
+
+        // login ค้างจากครั้งก่อน → ถามก่อน (อาจเป็นเครื่องที่ใช้ร่วมกัน)
+        if (!cancelled) setCandidate(identityOf(liff));
       } catch (err) {
         if (!cancelled) setError(toMessage(err));
       } finally {
@@ -113,22 +163,58 @@ export function LineConnectCard({ code, initialLinked }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [getLiff, linkAndCheckFriend]);
+  }, [getLiff, linkAndCheckFriend, initialLinked, code]);
+
+  /** ไปหน้า login ของ LINE แล้วกลับมาหน้านี้ */
+  function goLogin(liff: Liff) {
+    setFlag(code);
+    liff.login({ redirectUri: window.location.href });
+  }
 
   async function handleConnect() {
     setError(null);
     setBusy(true);
     try {
       const liff = await getLiff();
-      if (!liff.isLoggedIn()) {
-        // ไปหน้า LINE แล้วกลับมาที่หน้านี้ → useEffect ทำต่อ
-        liff.login({ redirectUri: window.location.href });
+      if (liff.isLoggedIn()) {
+        // ไม่ควรเกิด (login ค้าง = โชว์กล่องยืนยันแทนปุ่มนี้) → ถามก่อนเหมือนกัน
+        setCandidate(identityOf(liff));
         return;
       }
-      await linkAndCheckFriend(liff);
+      goLogin(liff);
     } catch (err) {
       setError(toMessage(err));
     } finally {
+      setBusy(false);
+    }
+  }
+
+  /** ลูกค้ายืนยันว่าบัญชีที่จำไว้เป็นของตัวเอง */
+  async function handleConfirmCandidate() {
+    setError(null);
+    setBusy(true);
+    try {
+      const liff = await getLiff();
+      await linkAndCheckFriend(liff);
+      setCandidate(null);
+    } catch (err) {
+      setError(toMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** ไม่ใช่บัญชีของฉัน → ลืมบัญชีนี้ในเบราว์เซอร์ แล้ว login ใหม่ */
+  async function handleSwitchAccount() {
+    setError(null);
+    setBusy(true);
+    try {
+      const liff = await getLiff();
+      liff.logout();
+      setCandidate(null);
+      goLogin(liff);
+    } catch (err) {
+      setError(toMessage(err));
       setBusy(false);
     }
   }
@@ -170,7 +256,13 @@ export function LineConnectCard({ code, initialLinked }: Props) {
           status={authStatus}
           summary="เชื่อม LINE กับการจองนี้แล้ว"
         >
-          <AuthStepContent busy={busy} onConnect={handleConnect} />
+          <AuthStepContent
+            busy={busy}
+            candidate={candidate}
+            onConnect={handleConnect}
+            onConfirm={handleConfirmCandidate}
+            onSwitch={handleSwitchAccount}
+          />
         </StepShell>
 
         {/* Step 02: Add Friend */}
@@ -277,11 +369,28 @@ function StepShell({
 /* ─── Step 01 content ─── */
 function AuthStepContent({
   busy,
+  candidate,
   onConnect,
+  onConfirm,
+  onSwitch,
 }: {
   busy: boolean;
+  candidate: LineIdentity | null;
   onConnect: () => void;
+  onConfirm: () => void;
+  onSwitch: () => void;
 }) {
+  if (candidate) {
+    return (
+      <ConfirmIdentity
+        busy={busy}
+        identity={candidate}
+        onConfirm={onConfirm}
+        onSwitch={onSwitch}
+      />
+    );
+  }
+
   return (
     <>
       <div className="mb-4 flex items-center gap-3">
@@ -319,6 +428,62 @@ function AuthStepContent({
         busy={busy}
         onClick={onConnect}
       />
+    </>
+  );
+}
+
+/* ─── Step 01: login ค้างอยู่ → ถามก่อนผูก ─── */
+function ConfirmIdentity({
+  busy,
+  identity,
+  onConfirm,
+  onSwitch,
+}: {
+  busy: boolean;
+  identity: LineIdentity;
+  onConfirm: () => void;
+  onSwitch: () => void;
+}) {
+  return (
+    <>
+      <div className="mb-4 flex items-center gap-3">
+        {identity.picture ? (
+          // eslint-disable-next-line @next/next/no-img-element -- รูปโปรไฟล์จาก LINE CDN ไม่ต้อง optimize
+          <img
+            src={identity.picture}
+            alt=""
+            className="h-11 w-11 shrink-0 rounded-full object-cover"
+            referrerPolicy="no-referrer"
+          />
+        ) : (
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#06C755]">
+            <LineIcon className="h-6 w-6 text-white" />
+          </div>
+        )}
+        <div className="min-w-0">
+          <p className="text-sm tracking-wide text-foreground/80">
+            ส่งรายละเอียดการจองไปที่ LINE
+          </p>
+          <p className="mt-0.5 truncate text-sm font-medium tracking-wide text-foreground">
+            {identity.name} ใช่ไหม?
+          </p>
+        </div>
+      </div>
+
+      <ActionButton
+        label="ใช่ ส่งเลย"
+        icon={<Check className="h-4 w-4" strokeWidth={2.5} />}
+        busy={busy}
+        onClick={onConfirm}
+      />
+      <button
+        type="button"
+        onClick={onSwitch}
+        disabled={busy}
+        className="mt-2 w-full px-2 py-2.5 text-[13px] tracking-wide text-foreground/60 hover:text-foreground disabled:opacity-50"
+      >
+        ไม่ใช่ฉัน · ใช้บัญชี LINE อื่น
+      </button>
     </>
   );
 }

@@ -1,4 +1,17 @@
-import type { BookingStatus } from "@/lib/db/queries/bookings";
+import type { BookingStatus, CancelledBy } from "@/lib/db/queries/bookings";
+
+/**
+ * ใครยกเลิก (Migration 0003)
+ * short = ใต้ป้ายสถานะในตาราง · full = หน้ารายละเอียด
+ * null (ยกเลิกก่อนมีการบันทึก) → ไม่แสดง
+ */
+export const CANCELLED_BY_LABEL: Record<
+  CancelledBy,
+  { short: string; full: string }
+> = {
+  customer: { short: "โดยลูกค้า · LINE", full: "ลูกค้ายกเลิกเองผ่าน LINE" },
+  shop: { short: "โดยร้าน", full: "ร้านยกเลิก (หน้า admin)" },
+};
 
 /**
  * Shared status label + variant config.

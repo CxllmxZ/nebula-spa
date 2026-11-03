@@ -63,6 +63,7 @@ export async function GET(request: Request) {
         startsAt: toBangkokIsoString(b.startsAt),
         endsAt: toBangkokIsoString(b.endsAt),
         createdAt: toBangkokIsoString(b.createdAt),
+        cancelledAt: b.cancelledAt ? toBangkokIsoString(b.cancelledAt) : null,
       })),
       meta: result.meta,
     });

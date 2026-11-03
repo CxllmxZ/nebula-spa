@@ -255,7 +255,11 @@ export async function cancelBookingByCustomer(
 
   const cancelled = await db
     .update(bookings)
-    .set({ status: "cancelled" })
+    .set({
+      status: "cancelled",
+      cancelledBy: "customer",
+      cancelledAt: new Date(),
+    })
     .where(
       and(
         eq(bookings.code, code),

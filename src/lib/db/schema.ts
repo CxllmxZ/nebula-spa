@@ -103,6 +103,13 @@ export const bookings = sqliteTable(
 
     notes: text("notes"),
 
+    // Migration 0003 — ใครยกเลิก / เมื่อไหร่ / ทำไม (null = ยังไม่ยกเลิก หรือยกเลิกก่อนมีคอลัมน์นี้)
+    // customer = ลูกค้ายกเลิกเองผ่าน LINE · shop = ร้าน (admin/staff) เปลี่ยนสถานะในหน้า admin
+    cancelledBy: text("cancelled_by", { enum: ["customer", "shop"] }),
+    cancelledAt: integer("cancelled_at", { mode: "timestamp" }),
+    // รหัสสาเหตุ (เช่น "busy", "reschedule") — ลูกค้าเลือกจากปุ่มใน LINE (ใช้ใน Day 41 ข้อ 4)
+    cancelReason: text("cancel_reason"),
+
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),

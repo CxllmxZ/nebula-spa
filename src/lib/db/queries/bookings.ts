@@ -224,6 +224,9 @@ export async function getBookingByCode(
       createdAt: bookings.createdAt,
       customerId: bookings.customerId,
       updatedAt: bookings.updatedAt,
+      cancelledBy: bookings.cancelledBy,
+      cancelledAt: bookings.cancelledAt,
+      cancelReason: bookings.cancelReason,
       // joined
       serviceName: services.name,
     })
@@ -273,6 +276,9 @@ const BOOKING_STATUS_VALUES = [
 
 export type BookingStatus = (typeof BOOKING_STATUS_VALUES)[number];
 
+/** ใครยกเลิก (Migration 0003) — null = ยังไม่ยกเลิก / ยกเลิกก่อนมีการบันทึก */
+export type CancelledBy = "customer" | "shop";
+
 export interface AdminBookingListItem {
   id: number;
   code: string;
@@ -287,6 +293,58 @@ export interface AdminBookingListItem {
   status: BookingStatus;
   notes: string | null;
   createdAt: Date;
+  /** Migration 0003 */
+  cancelledBy: CancelledBy | null;
+  cancelledAt: Date | null;
+  cancelReason: string | null;
+  /** ลูกค้าเชื่อม LINE กับคิวนี้แล้ว (Day 40) */
+  lineLinked: boolean;
+}
+
+/**
+ * ฟิลด์ที่หน้า admin ใช้ — ใช้ร่วมกันทุก query (list / byId / recent)
+ * เพิ่มฟิลด์ที่นี่ที่เดียว ไม่ต้องตามแก้ 3 ที่
+ */
+const adminBookingFields = {
+  id: bookings.id,
+  code: bookings.code,
+  customerName: bookings.customerName,
+  customerPhone: bookings.customerPhone,
+  serviceId: bookings.serviceId,
+  serviceName: services.name,
+  startsAt: bookings.startsAt,
+  endsAt: bookings.endsAt,
+  durationMin: bookings.durationMin,
+  price: bookings.price,
+  status: bookings.status,
+  notes: bookings.notes,
+  createdAt: bookings.createdAt,
+  cancelledBy: bookings.cancelledBy,
+  cancelledAt: bookings.cancelledAt,
+  cancelReason: bookings.cancelReason,
+  customerId: bookings.customerId,
+};
+
+/** แถวดิบจาก select(adminBookingFields) — ก่อนแปลงเป็น AdminBookingListItem */
+type AdminBookingRow = Omit<
+  AdminBookingListItem,
+  "serviceName" | "status" | "cancelledBy" | "lineLinked"
+> & {
+  serviceName: string | null;
+  status: string;
+  cancelledBy: string | null;
+  customerId: number | null;
+};
+
+function toAdminListItem(r: AdminBookingRow): AdminBookingListItem {
+  const { customerId, ...rest } = r;
+  return {
+    ...rest,
+    serviceName: r.serviceName ?? "(บริการที่ถูกลบ)",
+    status: r.status as BookingStatus,
+    cancelledBy: (r.cancelledBy as CancelledBy | null) ?? null,
+    lineLinked: customerId !== null,
+  };
 }
 
 export interface AdminBookingListResult {
@@ -359,21 +417,7 @@ export async function getBookingsWithFilter(
 
   // ─── Query paginated data + join service name ─────────────
   const rows = await db
-    .select({
-      id: bookings.id,
-      code: bookings.code,
-      customerName: bookings.customerName,
-      customerPhone: bookings.customerPhone,
-      serviceId: bookings.serviceId,
-      serviceName: services.name,
-      startsAt: bookings.startsAt,
-      endsAt: bookings.endsAt,
-      durationMin: bookings.durationMin,
-      price: bookings.price,
-      status: bookings.status,
-      notes: bookings.notes,
-      createdAt: bookings.createdAt,
-    })
+    .select(adminBookingFields)
     .from(bookings)
     .leftJoin(services, eq(bookings.serviceId, services.id))
     .where(whereClause)
@@ -381,11 +425,7 @@ export async function getBookingsWithFilter(
     .limit(filter.pageSize)
     .offset((filter.page - 1) * filter.pageSize);
 
-  const items: AdminBookingListItem[] = rows.map((r) => ({
-    ...r,
-    serviceName: r.serviceName ?? "(บริการที่ถูกลบ)",
-    status: r.status as BookingStatus,
-  }));
+  const items: AdminBookingListItem[] = rows.map(toAdminListItem);
 
   return {
     bookings: items,
@@ -408,38 +448,24 @@ export async function getBookingById(
   const db = await getDb();
 
   const [row] = await db
-    .select({
-      id: bookings.id,
-      code: bookings.code,
-      customerName: bookings.customerName,
-      customerPhone: bookings.customerPhone,
-      serviceId: bookings.serviceId,
-      serviceName: services.name,
-      startsAt: bookings.startsAt,
-      endsAt: bookings.endsAt,
-      durationMin: bookings.durationMin,
-      price: bookings.price,
-      status: bookings.status,
-      notes: bookings.notes,
-      createdAt: bookings.createdAt,
-    })
+    .select(adminBookingFields)
     .from(bookings)
     .leftJoin(services, eq(bookings.serviceId, services.id))
     .where(eq(bookings.id, id))
     .limit(1);
 
   if (!row) return null;
-
-  return {
-    ...row,
-    serviceName: row.serviceName ?? "(บริการที่ถูกลบ)",
-    status: row.status as BookingStatus,
-  };
+  return toAdminListItem(row);
 }
 
 /**
- * Update booking status.
+ * Update booking status (หน้า admin — ร้านเป็นคนเปลี่ยน)
  * MVP: free change — no state machine enforcement.
+ *
+ * บันทึกการยกเลิก (Migration 0003):
+ *   - เปลี่ยนเป็น cancelled (จากสถานะอื่น) → cancelledBy = "shop", cancelledAt = now
+ *   - cancelled → cancelled (บันทึกซ้ำ)     → ไม่แตะ (ไม่ทับว่าลูกค้าเป็นคนยกเลิก)
+ *   - cancelled → สถานะอื่น (เปิดคิวคืน)     → ล้างข้อมูลการยกเลิก + สาเหตุ
  *
  * @returns updated booking or null if not found
  */
@@ -449,11 +475,28 @@ export async function updateBookingStatus(
 ): Promise<AdminBookingListItem | null> {
   const db = await getDb();
 
+  const [current] = await db
+    .select({ status: bookings.status })
+    .from(bookings)
+    .where(eq(bookings.id, id))
+    .limit(1);
+  if (!current) return null;
+
+  const wasCancelled = current.status === "cancelled";
+  const cancelFields =
+    status === "cancelled"
+      ? wasCancelled
+        ? {}
+        : { cancelledBy: "shop" as const, cancelledAt: new Date() }
+      : wasCancelled
+        ? { cancelledBy: null, cancelledAt: null, cancelReason: null }
+        : {};
+
   const [updated] = await db
     .update(bookings)
-    .set({ status })
+    .set({ status, ...cancelFields })
     .where(eq(bookings.id, id))
-    .returning();
+    .returning({ id: bookings.id });
 
   if (!updated) return null;
 
@@ -561,31 +604,13 @@ export async function getRecentBookings(
   const db = await getDb();
 
   const rows = await db
-    .select({
-      id: bookings.id,
-      code: bookings.code,
-      customerName: bookings.customerName,
-      customerPhone: bookings.customerPhone,
-      serviceId: bookings.serviceId,
-      serviceName: services.name,
-      startsAt: bookings.startsAt,
-      endsAt: bookings.endsAt,
-      durationMin: bookings.durationMin,
-      price: bookings.price,
-      status: bookings.status,
-      notes: bookings.notes,
-      createdAt: bookings.createdAt,
-    })
+    .select(adminBookingFields)
     .from(bookings)
     .leftJoin(services, eq(bookings.serviceId, services.id))
     .orderBy(desc(bookings.createdAt))
     .limit(limit);
 
-  return rows.map((r) => ({
-    ...r,
-    serviceName: r.serviceName ?? "(บริการที่ถูกลบ)",
-    status: r.status as BookingStatus,
-  }));
+  return rows.map(toAdminListItem);
 }
 
 // ─────────────────────────────────────────────────────────────

@@ -50,6 +50,9 @@ export async function GET(request: Request, { params }: RouteContext) {
       startsAt: toBangkokIsoString(booking.startsAt),
       endsAt: toBangkokIsoString(booking.endsAt),
       createdAt: toBangkokIsoString(booking.createdAt),
+      cancelledAt: booking.cancelledAt
+        ? toBangkokIsoString(booking.cancelledAt)
+        : null,
     });
   } catch (err) {
     console.error("[GET /api/admin/bookings/[id]] Unexpected error", err);
@@ -167,6 +170,9 @@ export async function PATCH(request: Request, { params }: RouteContext) {
       startsAt: toBangkokIsoString(updated.startsAt),
       endsAt: toBangkokIsoString(updated.endsAt),
       createdAt: toBangkokIsoString(updated.createdAt),
+      cancelledAt: updated.cancelledAt
+        ? toBangkokIsoString(updated.cancelledAt)
+        : null,
     });
   } catch (err) {
     console.error("[PATCH /api/admin/bookings/[id]] Unexpected error", err);
