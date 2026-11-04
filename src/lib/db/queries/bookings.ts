@@ -159,6 +159,15 @@ export async function createBooking(
     );
   }
 
+  // ─── Step 4c: จองครั้งที่เท่าไหร่ของเบอร์นี้ (Migration 0004) ─
+  // นับทุกสถานะ (รวมที่ยกเลิก) — วิเคราะห์ทีหลังกรองเองได้
+  // เบอร์ที่ถูกปิดบังไปแล้วเป็น "0xxxxx" → ไม่ชนกับเบอร์จริง
+  const [{ previous }] = await db
+    .select({ previous: count() })
+    .from(bookings)
+    .where(eq(bookings.customerPhone, input.customerPhone));
+  const customerBookingNo = previous + 1;
+
   // ─── Step 5-6: Generate code + insert (retry on collision) ─
   for (let attempt = 0; attempt < CODE_RETRY_ATTEMPTS; attempt++) {
     const code = generateBookingCode();
@@ -178,6 +187,7 @@ export async function createBooking(
           price: service.price,
           status: "confirmed",
           notes: input.notes ?? null,
+          customerBookingNo,
         })
         .returning();
 
@@ -227,6 +237,8 @@ export async function getBookingByCode(
       cancelledBy: bookings.cancelledBy,
       cancelledAt: bookings.cancelledAt,
       cancelReason: bookings.cancelReason,
+      customerBookingNo: bookings.customerBookingNo,
+      anonymizedAt: bookings.anonymizedAt,
       // joined
       serviceName: services.name,
     })
@@ -299,6 +311,10 @@ export interface AdminBookingListItem {
   cancelReason: string | null;
   /** ลูกค้าเชื่อม LINE กับคิวนี้แล้ว (Day 40) */
   lineLinked: boolean;
+  /** Migration 0004 — จองครั้งที่ (null = คิวก่อนมีคอลัมน์ ที่ backfill ไม่ได้) */
+  customerBookingNo: number | null;
+  /** Migration 0004 — ปิดบังชื่อ/เบอร์แล้ว (PDPA) */
+  anonymizedAt: Date | null;
 }
 
 /**
@@ -322,6 +338,8 @@ const adminBookingFields = {
   cancelledBy: bookings.cancelledBy,
   cancelledAt: bookings.cancelledAt,
   cancelReason: bookings.cancelReason,
+  customerBookingNo: bookings.customerBookingNo,
+  anonymizedAt: bookings.anonymizedAt,
   customerId: bookings.customerId,
 };
 

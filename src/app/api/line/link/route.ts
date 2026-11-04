@@ -15,7 +15,7 @@ import { bookingConfirmationMessage } from "@/lib/line-customer-messages";
  *   1. ตรวจ body
  *   2. ตรวจ ID token กับ LINE (ไม่เชื่อ userId จากหน้าเว็บ)
  *   3. ผูก — 1 คิวผูกได้ LINE เดียว
- *   4. ผูกครั้งแรก → push รายละเอียด + ปุ่มยกเลิก (นับโควตา 1)
+ *   4. ผูกครั้งแรก + ไม่ได้บล็อก OA → push รายละเอียด + ปุ่มยกเลิก (นับโควตา 1)
  *      ยังไม่เป็นเพื่อน OA → push ไม่ผ่าน → ไม่เป็นไร: แอดเพื่อนเมื่อไหร่ webhook "follow" ส่งให้ (reply ฟรี)
  *
  * Response: { linked: true, messageSent } | { error, code }
@@ -75,9 +75,9 @@ export async function POST(request: Request) {
     );
   }
 
-  // ผูกซ้ำ (รีเฟรชหน้า) → ไม่ส่งซ้ำ
+  // ผูกซ้ำ (รีเฟรชหน้า) → ไม่ส่งซ้ำ · บล็อก OA อยู่ → ไม่ส่ง (แอดกลับเมื่อไหร่ follow ส่งให้)
   let messageSent = false;
-  if (result.newlyLinked) {
+  if (result.newlyLinked && result.notifyEnabled) {
     try {
       await pushLineMessages(
         env.LINE_CHANNEL_ACCESS_TOKEN,

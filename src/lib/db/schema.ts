@@ -110,6 +110,14 @@ export const bookings = sqliteTable(
     // รหัสสาเหตุ (เช่น "busy", "reschedule") — ลูกค้าเลือกจากปุ่มใน LINE (ใช้ใน Day 41 ข้อ 4)
     cancelReason: text("cancel_reason"),
 
+    // Migration 0004 — PDPA + วิเคราะห์ลูกค้าใหม่/ประจำ
+    // จองครั้งที่เท่าไหร่ของเบอร์นี้ (1 = ครั้งแรก) — ตัวเลขล้วน ไม่ใช่ข้อมูลส่วนบุคคล
+    // อยู่ต่อหลังปิดบังชื่อ/เบอร์ → ยังวิเคราะห์ลูกค้าใหม่ vs ประจำได้
+    customerBookingNo: integer("customer_booking_no"),
+    // ปิดบังชื่อ/เบอร์/หมายเหตุแล้วเมื่อไหร่ (null = ยังไม่ปิดบัง)
+    // กติกา: เบอร์ที่ไม่มีการจองเลย 6 เดือน (นับจากวันนัดล่าสุด) → custom-worker ทำเดือนละครั้ง
+    anonymizedAt: integer("anonymized_at", { mode: "timestamp" }),
+
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),

@@ -1,12 +1,22 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ADVANCE_BOOKING_DAYS } from "@/lib/booking-rules";
+
+/**
+ * จองไม่ผ่านแล้วต้องทำอะไรต่อ
+ * - stay:      อยู่หน้าฟอร์ม โชว์ข้อความ (Turnstile / เน็ต / server)
+ * - pickTime:  เวลานี้ใช้ไม่ได้แล้ว → กลับไปเลือกเวลา (โหลดเวลาว่างใหม่)
+ * - pickDate:  วันนี้ใช้ไม่ได้ → กลับไปเลือกวัน
+ */
+export type BookingFailAction = "stay" | "pickTime" | "pickDate";
 
 type Props = {
   booking: {
@@ -15,23 +25,66 @@ type Props = {
     startTime: string;
   };
   summary: string; // for display
+  /** pickTime / pickDate → ให้ booking-flow พากลับไปขั้นตอนนั้น พร้อมข้อความ */
+  onFail?: (
+    action: Exclude<BookingFailAction, "stay">,
+    message: string,
+  ) => void;
 };
 
 const SITE_KEY =
   process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "1x00000000000000000000AA";
 
-function mapError(status: number, errorCode?: string): string {
-  if (status === 409) return "เวลานี้ถูกจองไปแล้ว กรุณาเลือกเวลาอื่น";
-  if (status === 422 && errorCode === "PAST_DATE")
-    return "ไม่สามารถจองวันที่ผ่านมาแล้ว";
-  if (status === 422 && errorCode === "BEYOND_ADVANCE_LIMIT")
-    return "ไม่สามารถจองล่วงหน้าเกิน 30 วัน";
-  if (status === 404) return "ไม่พบบริการนี้ กรุณาเริ่มใหม่";
-  if (status === 400) return "ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง";
-  return "เกิดข้อผิดพลาด กรุณาลองใหม่";
+/** server ส่งชื่อ error มาใน `code` (ดู api/bookings/route.ts) */
+function mapError(
+  status: number,
+  code?: string,
+): { action: BookingFailAction; message: string } {
+  switch (code) {
+    case "SLOT_CONFLICT":
+      return {
+        action: "pickTime",
+        message: "เวลานี้มีคนจองไปก่อนแล้ว — กรุณาเลือกเวลาใหม่",
+      };
+    case "SLOT_UNAVAILABLE":
+      return {
+        action: "pickTime",
+        message: "เวลานี้ไม่เปิดรับจองแล้ว — กรุณาเลือกเวลาใหม่",
+      };
+    case "PAST_DATE":
+      return {
+        action: "pickDate",
+        message: "วันหรือเวลานี้ผ่านไปแล้ว — กรุณาเลือกใหม่",
+      };
+    case "BEYOND_ADVANCE_LIMIT":
+      return {
+        action: "pickDate",
+        message: `จองล่วงหน้าได้ไม่เกิน ${ADVANCE_BOOKING_DAYS} วัน — กรุณาเลือกวันที่ใกล้กว่านี้`,
+      };
+    case "TURNSTILE_FAILED":
+      return {
+        action: "stay",
+        message:
+          "ยืนยันว่าไม่ใช่บอทไม่สำเร็จ — รอให้กล่องยืนยันขึ้นเครื่องหมายถูก แล้วกดจองอีกครั้ง",
+      };
+    case "SERVICE_NOT_FOUND":
+      return {
+        action: "stay",
+        message: "บริการนี้ปิดรับจองแล้ว — กรุณารีเฟรชหน้าแล้วเลือกบริการใหม่",
+      };
+  }
+  if (status === 400)
+    return {
+      action: "stay",
+      message: "ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบชื่อและเบอร์โทร",
+    };
+  return {
+    action: "stay",
+    message: "ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง หรือโทรจองกับทางร้าน",
+  };
 }
 
-export function CustomerForm({ booking, summary }: Props) {
+export function CustomerForm({ booking, summary, onFail }: Props) {
   const router = useRouter();
   const turnstileRef = useRef<TurnstileInstance | null>(null);
   const [name, setName] = useState("");
@@ -69,29 +122,34 @@ export function CustomerForm({ booking, summary }: Props) {
         }),
       });
 
-      const data = (await res.json()) as {
+      // 500 จาก Worker อาจไม่ใช่ JSON → อย่าให้ตกไปเป็น "เครือข่ายผิดพลาด"
+      const data = (await res.json().catch(() => ({}))) as {
         code?: string;
         error?: string;
-        errorCode?: string;
       };
 
       if (!res.ok) {
-        setError(mapError(res.status, data.errorCode));
+        const { action, message } = mapError(res.status, data.code);
         resetTurnstile();
         setSubmitting(false);
+        if (action !== "stay" && onFail) {
+          onFail(action, message); // booking-flow พากลับไปขั้นตอนนั้น (ฟอร์มนี้จะถูกซ่อน)
+          return;
+        }
+        setError(message);
         return;
       }
 
       if (data.code) {
         router.push(`/book/${data.code}`);
       } else {
-        setError("Response ผิดปกติ กรุณาลองใหม่");
+        setError("ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง");
         resetTurnstile();
         setSubmitting(false);
       }
     } catch (err) {
       console.error(err);
-      setError("เกิดข้อผิดพลาดเครือข่าย ลองใหม่อีกครั้ง");
+      setError("เชื่อมต่อไม่ได้ — ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่อีกครั้ง");
       resetTurnstile();
       setSubmitting(false);
     }
@@ -181,6 +239,18 @@ export function CustomerForm({ booking, summary }: Props) {
           <>ยืนยันการจอง →</>
         )}
       </Button>
+
+      {/* PDPA: ใช้ข้อมูลเพื่อให้บริการตามที่ลูกค้าขอจอง → แจ้งให้ทราบ ไม่ต้องติ๊กยินยอม */}
+      <p className="text-center text-xs leading-relaxed tracking-wide text-foreground/50">
+        การยืนยันการจองถือว่าคุณรับทราบ{" "}
+        <Link
+          href="/privacy"
+          target="_blank"
+          className="text-primary underline-offset-4 hover:underline"
+        >
+          นโยบายความเป็นส่วนตัว
+        </Link>
+      </p>
     </form>
   );
 }

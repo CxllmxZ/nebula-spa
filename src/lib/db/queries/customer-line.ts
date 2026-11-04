@@ -9,9 +9,11 @@
  *   - 1 คิว ผูกได้ LINE เดียว (มีคนได้รหัสจองไปก็ผูกซ้ำไม่ได้)
  *   - ผูกได้ / ยกเลิกได้ เฉพาะคิวที่ยังใช้งาน (pending/confirmed) และยังไม่ถึงเวลานัด
  *   - ผูก LINE ไม่เปลี่ยนสถานะคิว (ไม่มีระบบเตือนก่อนนัด → ไม่ต้อง "รอยืนยัน")
+ *   - line_notify_enabled: unfollow (บล็อก/ลบเพื่อน OA) = false · follow = true (Day 42)
+ *     การผูก LINE ไม่แตะค่านี้ — ผูกได้ทั้งที่ยังบล็อก OA อยู่ (LINE Login ≠ เป็นเพื่อน)
  */
 
-import { and, asc, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { bookings, customers, services } from "@/lib/db/schema";
 
@@ -61,7 +63,13 @@ function isActive(b: { status: string; startsAt: Date }): boolean {
 // ─────────────────────────────────────────────────────────────
 
 export type LinkResult =
-  | { ok: true; newlyLinked: boolean; booking: CustomerBooking }
+  | {
+      ok: true;
+      newlyLinked: boolean;
+      booking: CustomerBooking;
+      /** false = ลูกค้าบล็อก OA อยู่ → อย่า push (ไม่ผ่านอยู่แล้ว + เปลืองคำขอ) */
+      notifyEnabled: boolean;
+    }
   | {
       ok: false;
       reason: "NOT_FOUND" | "CLOSED" | "LINKED_TO_OTHER" | "PHONE_TAKEN";
@@ -84,19 +92,20 @@ export async function linkBookingToLine(
   if (!isActive(row)) return { ok: false, reason: "CLOSED" };
 
   // 2. ลูกค้า (หาจาก LINE ก่อน → ไม่เจอค่อยหาจากเบอร์)
-  const customerId = await findOrCreateCustomer(
+  const customer = await findOrCreateCustomer(
     lineUserId,
     row.customerPhone,
     row.customerName,
   );
-  if (customerId === null) return { ok: false, reason: "PHONE_TAKEN" };
+  if (customer === null) return { ok: false, reason: "PHONE_TAKEN" };
+  const { id: customerId, notifyEnabled } = customer;
 
   const { customerId: currentCustomerId, ...rest } = row;
   const booking = withServiceName(rest);
 
   // 3. ผูกคิว — เฉพาะคิวที่ยังไม่ถูกผูก (กันสองคนผูกพร้อมกัน)
   if (currentCustomerId === customerId) {
-    return { ok: true, newlyLinked: false, booking };
+    return { ok: true, newlyLinked: false, booking, notifyEnabled };
   }
   if (currentCustomerId !== null) {
     return { ok: false, reason: "LINKED_TO_OTHER" };
@@ -116,39 +125,36 @@ export async function linkBookingToLine(
       .where(eq(bookings.code, code))
       .limit(1);
     return again?.customerId === customerId
-      ? { ok: true, newlyLinked: false, booking }
+      ? { ok: true, newlyLinked: false, booking, notifyEnabled }
       : { ok: false, reason: "LINKED_TO_OTHER" };
   }
 
-  return { ok: true, newlyLinked: true, booking };
+  return { ok: true, newlyLinked: true, booking, notifyEnabled };
 }
 
 /**
- * @returns customer id / null = เบอร์นี้ผูกกับ LINE บัญชีอื่นไปแล้ว
+ * @returns ลูกค้า / null = เบอร์นี้ผูกกับ LINE บัญชีอื่นไปแล้ว
  */
 async function findOrCreateCustomer(
   lineUserId: string,
   phone: string,
   name: string,
-): Promise<number | null> {
+): Promise<{ id: number; notifyEnabled: boolean } | null> {
   const db = await getDb();
 
   const [byLine] = await db
-    .select({ id: customers.id })
+    .select({ id: customers.id, notifyEnabled: customers.lineNotifyEnabled })
     .from(customers)
     .where(eq(customers.lineUserId, lineUserId))
     .limit(1);
-  if (byLine) {
-    // ผูกใหม่ = แอดเพื่อนอยู่ (ถ้าเคย unfollow มาก่อน) → เปิดแจ้งเตือนคืน
-    await db
-      .update(customers)
-      .set({ lineNotifyEnabled: true })
-      .where(eq(customers.id, byLine.id));
-    return byLine.id;
-  }
+  if (byLine) return byLine;
 
   const [byPhone] = await db
-    .select({ id: customers.id, lineUserId: customers.lineUserId })
+    .select({
+      id: customers.id,
+      lineUserId: customers.lineUserId,
+      notifyEnabled: customers.lineNotifyEnabled,
+    })
     .from(customers)
     .where(eq(customers.phone, phone))
     .limit(1);
@@ -157,30 +163,61 @@ async function findOrCreateCustomer(
     if (byPhone.lineUserId && byPhone.lineUserId !== lineUserId) return null;
     await db
       .update(customers)
-      .set({ lineUserId, lineNotifyEnabled: true })
+      .set({ lineUserId })
       .where(eq(customers.id, byPhone.id));
-    return byPhone.id;
+    return { id: byPhone.id, notifyEnabled: byPhone.notifyEnabled };
   }
 
   try {
     const [created] = await db
       .insert(customers)
       .values({ phone, name, lineUserId })
-      .returning({ id: customers.id });
-    return created.id;
+      .returning({
+        id: customers.id,
+        notifyEnabled: customers.lineNotifyEnabled,
+      });
+    return created;
   } catch (err) {
     // ชน unique (เบอร์/LINE) จากคำขอที่เข้ามาพร้อมกัน → ลองหาใหม่ครั้งเดียว
     if (err instanceof Error && err.message.includes("UNIQUE")) {
       const [retry] = await db
-        .select({ id: customers.id, lineUserId: customers.lineUserId })
+        .select({
+          id: customers.id,
+          lineUserId: customers.lineUserId,
+          notifyEnabled: customers.lineNotifyEnabled,
+        })
         .from(customers)
         .where(eq(customers.phone, phone))
         .limit(1);
-      if (retry && retry.lineUserId === lineUserId) return retry.id;
+      if (retry && retry.lineUserId === lineUserId) {
+        return { id: retry.id, notifyEnabled: retry.notifyEnabled };
+      }
       return null;
     }
     throw err;
   }
+}
+
+// ─────────────────────────────────────────────────────────────
+// follow / unfollow (Day 42)
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * ลูกค้าบล็อก/ลบเพื่อน OA (false) หรือกลับมาแอด (true)
+ * ไม่ใช่ลูกค้าที่เคยผูก (เช่น เจ้าของร้าน / คนทั่วไป) → ไม่มีแถว → ไม่ทำอะไร
+ * @returns true ถ้าเป็นลูกค้าที่รู้จัก
+ */
+export async function setLineNotifyEnabled(
+  lineUserId: string,
+  enabled: boolean,
+): Promise<boolean> {
+  const db = await getDb();
+  const updated = await db
+    .update(customers)
+    .set({ lineNotifyEnabled: enabled })
+    .where(eq(customers.lineUserId, lineUserId))
+    .returning({ id: customers.id });
+  return updated.length > 0;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -208,6 +245,31 @@ export async function getUpcomingBookingsForLineUser(
     .orderBy(asc(bookings.startsAt))
     .limit(limit);
   return rows.map(withServiceName);
+}
+
+/**
+ * คิวที่ "จองล่าสุด" และยังไม่ถึงเวลา ของ LINE นี้ — ใช้ตอนแอดเพื่อน (Day 42)
+ * ส่งแค่คิวเดียว: ลบเพื่อนแล้วแอดใหม่ จะไม่ได้คิวเก่าๆ ซ้ำทั้งหมด
+ */
+export async function getLatestUpcomingBookingForLineUser(
+  lineUserId: string,
+): Promise<CustomerBooking | null> {
+  const db = await getDb();
+  const [row] = await db
+    .select(bookingFields)
+    .from(bookings)
+    .innerJoin(customers, eq(bookings.customerId, customers.id))
+    .leftJoin(services, eq(bookings.serviceId, services.id))
+    .where(
+      and(
+        eq(customers.lineUserId, lineUserId),
+        inArray(bookings.status, [...ACTIVE_STATUSES]),
+        gt(bookings.startsAt, new Date()),
+      ),
+    )
+    .orderBy(desc(bookings.createdAt))
+    .limit(1);
+  return row ? withServiceName(row) : null;
 }
 
 /** คิวนี้ของ LINE นี้ (ทุกสถานะ — ให้ caller บอกเหตุผลได้ว่าทำไมยกเลิกไม่ได้) */

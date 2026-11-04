@@ -23,4 +23,4 @@ LINE_ENABLED = "true"
 LINE_LOGIN_CHANNEL_ID = "2012343120"
 
 [triggers]
-crons = ["0 23,0-2 * * *"]
+crons = ["0 23,0-2 * * *", "0 20 1 * *"]

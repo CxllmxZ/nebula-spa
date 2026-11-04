@@ -18,7 +18,8 @@ import {
   canCustomerCancel,
   cancelBookingByCustomer,
   getBookingForLineUser,
-  getUpcomingBookingsForLineUser,
+  getLatestUpcomingBookingForLineUser,
+  setLineNotifyEnabled,
 } from "@/lib/db/queries/customer-line";
 import {
   CANCEL_CONFIRM_TTL_MIN,
@@ -38,9 +39,10 @@ import { notifyBookingEvent } from "@/lib/notify";
  *   - message (group) : "#link 123456"  → ผูกกลุ่มพนักงาน / ข้อความอื่นในกลุ่ม → เงียบ
  *   - join   (group)  : บอทถูกเชิญเข้ากลุ่ม → บอกวิธีพิมพ์ #link
  *   - leave  (group)  : บอทถูกเอาออก → ถ้าเป็นกลุ่มที่ผูกไว้ → disconnected + แจ้งเจ้าของ
- *   - follow (user)   : ข้อความต้อนรับ + ถ้ามีคิวที่ผูก LINE ไว้ → ส่งรายละเอียด + ปุ่มยกเลิก (Day 40)
+ *   - follow (user)   : ข้อความต้อนรับ + คิวล่าสุดที่ผูก LINE ไว้ (ถ้ามี) + ปุ่มยกเลิก (Day 40 / 42)
  *   - postback (user) : ลูกค้ากดปุ่มยกเลิก → ถามซ้ำ → ยกเลิก + แจ้งร้าน (Day 40)
- *   (unfollow → ยังไม่ทำ)
+ *   - unfollow (user) : บล็อก/ลบเพื่อน OA → line_notify_enabled = false (ไม่ push หาอีก) (Day 42)
+ *                       follow กลับมา → true
  *
  * Flow:
  *   1. อ่าน raw body (ต้องก่อน parse — ใช้ตรวจลายเซ็น)
@@ -171,8 +173,10 @@ async function handleEvent(event: LineEvent, ctx: Ctx): Promise<void> {
       return handleFollow(event, ctx);
     case "postback":
       return handlePostback(event as LinePostbackEvent, ctx);
+    case "unfollow":
+      return handleUnfollow(event);
     default:
-      return; // unfollow ฯลฯ → ยังไม่ทำ
+      return;
   }
 }
 
@@ -270,20 +274,35 @@ async function handleLeave(event: LineEventBase, ctx: Ctx) {
 async function handleFollow(event: LineEventBase, ctx: Ctx) {
   if (event.source.type !== "user" || !event.replyToken) return;
 
-  // ลูกค้าที่ผูก LINE ไว้ก่อนแอดเพื่อน → push ตอนผูกไม่ผ่าน → ส่งตอนนี้แทน (reply = ฟรี)
-  const upcoming = await getUpcomingBookingsForLineUser(event.source.userId);
+  // กลับมาแอดเพื่อน (เคยบล็อก) → ส่งข้อความหาได้อีก — ไม่ใช่ลูกค้าที่เคยผูก = ไม่มีผล
+  await setLineNotifyEnabled(event.source.userId, true);
 
-  const welcome =
-    upcoming.length > 0
-      ? "ยินดีต้อนรับสู่ Nebula Spa 🌙\nนี่คือคิวที่คุณจองไว้ ยกเลิกได้จากปุ่มด้านล่าง"
-      : "ยินดีต้อนรับสู่ Nebula Spa 🌙\nเราจะส่งรายละเอียดคิวที่คุณจองผ่านแชทนี้";
+  // ลูกค้าที่ผูก LINE ไว้ก่อนแอดเพื่อน → push ตอนผูกไม่ผ่าน → ส่งตอนนี้แทน (reply = ฟรี)
+  // ส่งแค่คิวที่จองล่าสุด (Day 42) — ลบเพื่อนแล้วแอดใหม่ จะไม่ได้คิวเก่าทั้งหมดซ้ำ
+  const latest = await getLatestUpcomingBookingForLineUser(event.source.userId);
+
+  const welcome = latest
+    ? "ยินดีต้อนรับสู่ Nebula Spa 🌙\nนี่คือคิวล่าสุดที่คุณจองไว้ ยกเลิกได้จากปุ่มด้านล่าง"
+    : "ยินดีต้อนรับสู่ Nebula Spa 🌙\nเราจะส่งรายละเอียดคิวที่คุณจองผ่านแชทนี้";
 
   await replyLineMessages(
     ctx.token,
     event.replyToken,
-    [textMessage(welcome), ...upcoming.map(bookingConfirmationMessage)],
+    latest
+      ? [textMessage(welcome), bookingConfirmationMessage(latest)]
+      : [textMessage(welcome)],
     ctx.enabled,
   );
+}
+
+/**
+ * บล็อก / ลบเพื่อน OA — ไม่มี reply token (ตอบไม่ได้อยู่แล้ว)
+ * จดไว้ว่าไม่ต้อง push หาอีก · ถ้าเป็นเจ้าของร้าน: ไม่อยู่ในตาราง customers → ไม่มีผล
+ */
+async function handleUnfollow(event: LineEventBase) {
+  if (event.source.type !== "user") return;
+  const known = await setLineNotifyEnabled(event.source.userId, false);
+  if (known) console.log("[LINE webhook] customer unfollowed → notify off");
 }
 
 // ─────────────────────────────────────────────────────────────

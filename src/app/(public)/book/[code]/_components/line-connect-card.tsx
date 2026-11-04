@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Loader2, Lock, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -288,6 +289,18 @@ export function LineConnectCard({ code, initialLinked }: Props) {
 
         {/* Step 03: Complete */}
         {state === "complete" && <CompleteCard />}
+
+        <p className="px-2 text-center text-[11px] leading-relaxed tracking-wide text-foreground/45">
+          เชื่อม LINE = ยินยอมให้ร้านเก็บรหัสผู้ใช้ LINE
+          เพื่อส่งรายละเอียดการจอง · ยกเลิกได้โดยบล็อกบัญชี LINE ของร้าน ·{" "}
+          <Link
+            href="/privacy"
+            target="_blank"
+            className="text-primary underline-offset-4 hover:underline"
+          >
+            นโยบายความเป็นส่วนตัว
+          </Link>
+        </p>
 
         {error && (
           <p

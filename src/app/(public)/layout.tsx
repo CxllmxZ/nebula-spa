@@ -20,8 +20,17 @@ export default function PublicLayout({
       <main>{children}</main>
 
       <footer className="border-t border-primary/10 bg-card/40 py-6">
-        <div className="mx-auto max-w-6xl px-6 text-center text-xs tracking-widest text-muted-foreground">
-          © 2026 Nebula Spa — Demo project
+        <div className="mx-auto flex max-w-6xl flex-col items-center gap-2 px-6 text-center text-xs tracking-widest text-muted-foreground sm:flex-row sm:justify-center sm:gap-4">
+          <span>© 2026 Nebula Spa — Demo project</span>
+          <span aria-hidden className="hidden sm:inline">
+            ·
+          </span>
+          <Link
+            href="/privacy"
+            className="underline-offset-4 hover:text-foreground hover:underline"
+          >
+            นโยบายความเป็นส่วนตัว
+          </Link>
         </div>
       </footer>
 

@@ -103,7 +103,21 @@ export function BookingDetailDialog({ booking, open, onOpenChange }: Props) {
           {/* Info grid */}
           <div className="grid grid-cols-3 gap-x-4 gap-y-3 text-sm">
             <div className="text-muted-foreground">ลูกค้า</div>
-            <div className="col-span-2 font-medium">{booking.customerName}</div>
+            <div className="col-span-2 font-medium">
+              {booking.customerName}
+              {booking.customerBookingNo !== null && (
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  {booking.customerBookingNo === 1
+                    ? "จองครั้งแรก"
+                    : `จองครั้งที่ ${booking.customerBookingNo}`}
+                </span>
+              )}
+              {booking.anonymizedAt && (
+                <div className="text-xs font-normal text-muted-foreground">
+                  ปิดบังชื่อ/เบอร์แล้ว (ไม่ได้จองเกิน 6 เดือน · PDPA)
+                </div>
+              )}
+            </div>
 
             <div className="text-muted-foreground">เบอร์โทร</div>
             <div className="col-span-2">{booking.customerPhone}</div>
