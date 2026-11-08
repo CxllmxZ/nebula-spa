@@ -4,7 +4,11 @@
  * ใครได้อะไร (ตาม line-integration-plan.md → Notification Map):
  *   created    : เจ้าของ ✅ (มีเบอร์โทร)   + กลุ่ม ✅ (ไม่มีเบอร์โทร)
  *   cancelled  : by owner (ทำในหน้า admin) → กลุ่มเท่านั้น
- *                by customer (LINE, session ถัดไป) → เจ้าของ + กลุ่ม
+ *                by customer (LINE) → เจ้าของ + กลุ่ม
+ *   reschedule_request (Day 43): ลูกค้าเลือกสาเหตุ "ขอเลื่อน / จองผิดวันเวลา" หลังยกเลิก
+ *                → กลุ่ม (ไม่มีเบอร์ — ดูในหน้า admin) ให้พนักงานโทรนัดใหม่
+ *                → ร้านปิดวันนี้ / ไม่ได้ใช้กลุ่ม / กลุ่มหลุด / ส่งกลุ่มไม่ผ่าน → เจ้าของแทน (มีเบอร์)
+ *                  (คำขอที่ต้องมีคนโทรกลับ ห้ามหายเงียบในวันหยุด)
  *
  * กฎกลุ่ม:
  *   - วันที่ร้านปิดทั้งวัน (ดูจาก "วันนี้" ไม่ใช่วันนัด) → ไม่ส่งเข้ากลุ่ม (สรุปเช้าจะเก็บให้)
@@ -37,7 +41,8 @@ export interface NotifyBooking {
 
 export type BookingEvent =
   | { type: "created"; booking: NotifyBooking }
-  | { type: "cancelled"; booking: NotifyBooking; by: "customer" | "owner" };
+  | { type: "cancelled"; booking: NotifyBooking; by: "customer" | "owner" }
+  | { type: "reschedule_request"; booking: NotifyBooking };
 
 export interface NotifyEnv {
   token: string;
@@ -65,6 +70,15 @@ export async function notifyBookingEvent(
   const settings = await getLineSettings();
   const ownerId = settings.ownerLineUserId ?? env.fallbackOwnerId;
   const ownerOn = !!ownerId && settings.ownerNotifyEnabled;
+
+  if (event.type === "reschedule_request") {
+    return notifyRescheduleRequest(
+      event,
+      env,
+      settings,
+      ownerOn ? ownerId! : null,
+    );
+  }
 
   // ── เจ้าของ ───────────────────────────────────────────────
   const ownerWants = !(event.type === "cancelled" && event.by === "owner");
@@ -94,6 +108,30 @@ export async function notifyBookingEvent(
   if (ownerOn && ownerWants && !ownerReceived) {
     await safePush(env, ownerId!, `(แทนกลุ่มพนักงาน)\n${groupText}`);
   }
+}
+
+/**
+ * คำขอเลื่อน: กลุ่มก่อน (วันร้านเปิด) — ไม่ถึงกลุ่มด้วยเหตุใดก็ตาม → เจ้าของ
+ * ต่างจากเหตุการณ์อื่น: วันร้านปิดก็ต้องถึงใครสักคน (ต้องมีคนโทรกลับ)
+ */
+async function notifyRescheduleRequest(
+  event: Extract<BookingEvent, { type: "reschedule_request" }>,
+  env: NotifyEnv,
+  settings: Awaited<ReturnType<typeof getLineSettings>>,
+  ownerId: string | null,
+): Promise<void> {
+  const groupLinked =
+    settings.staffGroupStatus === "linked" && !!settings.staffGroupId;
+
+  if (groupLinked && !(await isShopClosedToday())) {
+    const text = groupMessage(event);
+    const ok =
+      (await safePush(env, settings.staffGroupId!, text)) ||
+      (await safePush(env, settings.staffGroupId!, text));
+    if (ok) return;
+  }
+
+  if (ownerId) await safePush(env, ownerId, ownerMessage(event));
 }
 
 /** push แบบไม่ throw — log แล้วคืน true/false */
@@ -180,6 +218,17 @@ function ownerMessage(event: BookingEvent): string {
     ].join("\n");
   }
 
+  if (event.type === "reschedule_request") {
+    return [
+      "🔁 ลูกค้าขอเลื่อนนัด / จองผิดวันเวลา",
+      `${formatBangkokDate(b.startsAt)} · ${timeRange(b)}`,
+      `${b.serviceName} · ${b.customerName}`,
+      `เบอร์: ${b.customerPhone}`,
+      `รหัสจอง: ${b.code}`,
+      "→ โทรนัดเวลาใหม่ให้ลูกค้า (คิวเดิมยกเลิกแล้ว)",
+    ].join("\n");
+  }
+
   // cancelled by customer
   return [
     "❌ ลูกค้ายกเลิกคิว",
@@ -202,6 +251,16 @@ function groupMessage(event: BookingEvent): string {
       `ลูกค้า: ${b.customerName}`,
       ...(b.notes ? [`📝 ${b.notes}`] : []),
       `สถานะ: ${STATUS_LABEL[b.status] ?? b.status}`,
+    ].join("\n");
+  }
+
+  if (event.type === "reschedule_request") {
+    return [
+      "🔁 ลูกค้าขอเลื่อนนัด / จองผิดวันเวลา",
+      `${formatBangkokDate(b.startsAt)} · ${timeRange(b)}`,
+      `${b.serviceName} · ${b.customerName}`,
+      `รหัสจอง: ${b.code}`,
+      "→ ติดต่อลูกค้าเพื่อนัดใหม่ (ดูเบอร์ในหน้า admin)",
     ].join("\n");
   }
 

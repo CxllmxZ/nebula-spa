@@ -24,6 +24,7 @@ import {
 import type { AdminBookingListItem } from "@/lib/db/queries/bookings";
 import type { AdminBookingFilter } from "@/lib/validations";
 import { BookingDetailDialog } from "./booking-detail-dialog";
+import { cancelReasonLabel } from "@/lib/cancel-reasons";
 
 interface Props {
   bookings: AdminBookingListItem[];
@@ -221,6 +222,11 @@ function CancelledByNote({ booking }: { booking: AdminBookingListItem }) {
   return (
     <div className="mt-1 text-[11px] text-muted-foreground">
       {CANCELLED_BY_LABEL[booking.cancelledBy].short}
+      {booking.cancelReason && (
+        <div className="text-foreground/70">
+          {cancelReasonLabel(booking.cancelReason)}
+        </div>
+      )}
     </div>
   );
 }

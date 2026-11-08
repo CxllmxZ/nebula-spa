@@ -30,6 +30,11 @@ export interface CustomerBooking {
   price: number;
   notes: string | null;
   status: string;
+  /** Day 43 — ใช้ส่ง Google Sheets / ตรวจก่อนบันทึกสาเหตุ */
+  customerBookingNo: number | null;
+  cancelledAt: Date | null;
+  cancelledBy: string | null;
+  cancelReason: string | null;
 }
 
 const bookingFields = {
@@ -43,6 +48,10 @@ const bookingFields = {
   price: bookings.price,
   notes: bookings.notes,
   status: bookings.status,
+  customerBookingNo: bookings.customerBookingNo,
+  cancelledAt: bookings.cancelledAt,
+  cancelledBy: bookings.cancelledBy,
+  cancelReason: bookings.cancelReason,
 };
 
 function withServiceName<T extends { serviceName: string | null }>(
@@ -333,5 +342,48 @@ export async function cancelBookingByCustomer(
     .returning({ code: bookings.code });
 
   if (cancelled.length === 0) return null;
+  return getBookingForLineUser(code, lineUserId);
+}
+
+// ─────────────────────────────────────────────────────────────
+// สาเหตุการยกเลิก (Day 43)
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * บันทึกสาเหตุ — atomic + บันทึกได้ครั้งเดียว
+ * เงื่อนไข: คิวของ LINE นี้ · ลูกค้ายกเลิกเอง (cancelled_by = customer) · ยังไม่มีสาเหตุ
+ * (กดปุ่มสาเหตุซ้ำ / กดปุ่มเก่า → ไม่ทับของเดิม)
+ *
+ * @returns คิว (พร้อมสาเหตุ) ถ้าบันทึกสำเร็จ / null = บันทึกไม่ได้
+ */
+export async function saveCancelReason(
+  code: string,
+  lineUserId: string,
+  reason: string,
+): Promise<CustomerBooking | null> {
+  const db = await getDb();
+
+  const [customer] = await db
+    .select({ id: customers.id })
+    .from(customers)
+    .where(eq(customers.lineUserId, lineUserId))
+    .limit(1);
+  if (!customer) return null;
+
+  const updated = await db
+    .update(bookings)
+    .set({ cancelReason: reason })
+    .where(
+      and(
+        eq(bookings.code, code),
+        eq(bookings.customerId, customer.id),
+        eq(bookings.status, "cancelled"),
+        eq(bookings.cancelledBy, "customer"),
+        isNull(bookings.cancelReason),
+      ),
+    )
+    .returning({ code: bookings.code });
+
+  if (updated.length === 0) return null;
   return getBookingForLineUser(code, lineUserId);
 }

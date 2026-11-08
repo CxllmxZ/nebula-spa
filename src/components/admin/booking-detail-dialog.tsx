@@ -31,6 +31,7 @@ import {
   BOOKING_STATUS_LIST,
   CANCELLED_BY_LABEL,
 } from "@/lib/booking-status";
+import { cancelReasonLabel } from "@/lib/cancel-reasons";
 import type {
   AdminBookingListItem,
   BookingStatus,
@@ -154,6 +155,14 @@ export function BookingDetailDialog({ booking, open, onOpenChange }: Props) {
                 <div className="text-muted-foreground">ยกเลิกโดย</div>
                 <div className="col-span-2">
                   {CANCELLED_BY_LABEL[booking.cancelledBy].full}
+                  {booking.cancelReason && (
+                    <div className="mt-0.5">
+                      สาเหตุ:{" "}
+                      <span className="font-medium">
+                        {cancelReasonLabel(booking.cancelReason)}
+                      </span>
+                    </div>
+                  )}
                   {booking.cancelledAt && (
                     <div className="text-xs text-muted-foreground">
                       {formatInTimeZone(

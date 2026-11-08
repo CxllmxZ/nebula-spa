@@ -18,6 +18,7 @@ import {
   canCustomerCancel,
   cancelBookingByCustomer,
   getBookingForLineUser,
+  saveCancelReason,
   getLatestUpcomingBookingForLineUser,
   setLineNotifyEnabled,
 } from "@/lib/db/queries/customer-line";
@@ -25,11 +26,18 @@ import {
   CANCEL_CONFIRM_TTL_MIN,
   bookingConfirmationMessage,
   cancelConfirmMessage,
+  cancelledAskReasonMessage,
   isConfirmExpired,
   parsePostbackData,
   textMessage,
 } from "@/lib/line-customer-messages";
 import { notifyBookingEvent } from "@/lib/notify";
+import {
+  sendCancellationToSheet,
+  sheetsConfigFrom,
+  type SheetsConfig,
+} from "@/lib/sheets";
+import { RESCHEDULE_REASON, cancelReasonLabel } from "@/lib/cancel-reasons";
 
 /**
  * POST /api/webhooks/line
@@ -41,6 +49,7 @@ import { notifyBookingEvent } from "@/lib/notify";
  *   - leave  (group)  : บอทถูกเอาออก → ถ้าเป็นกลุ่มที่ผูกไว้ → disconnected + แจ้งเจ้าของ
  *   - follow (user)   : ข้อความต้อนรับ + คิวล่าสุดที่ผูก LINE ไว้ (ถ้ามี) + ปุ่มยกเลิก (Day 40 / 42)
  *   - postback (user) : ลูกค้ากดปุ่มยกเลิก → ถามซ้ำ → ยกเลิก + แจ้งร้าน (Day 40)
+ *                       → ถามสาเหตุ (Quick Reply) → บันทึก D1 + ส่ง Google Sheets (Day 43)
  *   - unfollow (user) : บล็อก/ลบเพื่อน OA → line_notify_enabled = false (ไม่ push หาอีก) (Day 42)
  *                       follow กลับมา → true
  *
@@ -92,6 +101,8 @@ interface Ctx {
   token: string;
   enabled: boolean;
   fallbackOwnerId: string | undefined;
+  /** Day 43 — Google Sheets ของร้าน (ไม่ตั้ง = ไม่ส่ง) */
+  sheets: SheetsConfig;
 }
 
 const OWNER_CMD = /^#owner\s+(\d{6})$/i;
@@ -133,6 +144,7 @@ export async function POST(request: Request) {
     token: env.LINE_CHANNEL_ACCESS_TOKEN,
     enabled: env.LINE_ENABLED === "true",
     fallbackOwnerId: env.LINE_OWNER_USER_ID,
+    sheets: sheetsConfigFrom(env),
   };
 
   // Step 3: background — event ละตัว พังตัวเดียวไม่ลากตัวอื่น
@@ -325,6 +337,10 @@ async function handlePostback(event: LinePostbackEvent, ctx: Ctx) {
     return reply("รับทราบค่ะ คิวของคุณยังอยู่ตามเดิม 🌙");
   }
 
+  if (action === "reason") {
+    return handleReason(event, ctx, code, parsed.reason!);
+  }
+
   // ── ตรวจสิทธิ์: คิวต้องผูกกับ LINE นี้ ──────────────────
   const booking = await getBookingForLineUser(code, userId);
   if (!booking) {
@@ -365,8 +381,12 @@ async function handlePostback(event: LinePostbackEvent, ctx: Ctx) {
     return reply(latest ? cannotCancelText(latest) : CALL_SHOP);
   }
 
-  await reply(
-    `ยกเลิกการจอง ${cancelled.code} เรียบร้อยแล้ว ✅\nทางร้านได้รับแจ้งแล้วค่ะ ขอบคุณที่แจ้งล่วงหน้า 🙏`,
+  // ยกเลิกแล้ว + ถามสาเหตุ (Quick Reply — ไม่บังคับ) · reply = ไม่นับโควตา
+  await replyLineMessages(
+    ctx.token,
+    event.replyToken,
+    [cancelledAskReasonMessage(cancelled.code)],
+    ctx.enabled,
   );
 
   // แจ้งเจ้าของ + กลุ่ม (กติกาวันหยุด / fallback อยู่ใน notify.ts)
@@ -378,6 +398,49 @@ async function handlePostback(event: LinePostbackEvent, ctx: Ctx) {
       fallbackOwnerId: ctx.fallbackOwnerId,
     },
   );
+}
+
+/**
+ * ลูกค้าเลือกสาเหตุการยกเลิก (Day 43)
+ * บันทึกครั้งเดียว (atomic) → ตอบขอบคุณ → ส่ง Google Sheets (ถ้าร้านตั้งไว้)
+ * "ขอเลื่อน / จองผิด" → แจ้งกลุ่มพนักงานให้โทรนัดใหม่ (วันร้านปิด → เจ้าของ)
+ *   ไม่ส่งลิงก์ให้ลูกค้าจองใหม่เอง (สเปก: เลื่อนนัด = โทรคุยกับร้าน)
+ */
+async function handleReason(
+  event: LinePostbackEvent,
+  ctx: Ctx,
+  code: string,
+  reason: string,
+) {
+  if (event.source.type !== "user") return;
+  const reply = (text: string) =>
+    replyLineText(ctx.token, event.replyToken, text, ctx.enabled);
+
+  const saved = await saveCancelReason(code, event.source.userId, reason);
+  if (!saved) {
+    // ตอบไปแล้ว / ไม่ใช่คิวที่ลูกค้ายกเลิกเอง / ไม่ใช่ของ LINE นี้ → ไม่บันทึกซ้ำ
+    return reply("รับทราบค่ะ ขอบคุณที่แจ้งให้ทราบ 🙏");
+  }
+
+  const wantsReschedule = reason === RESCHEDULE_REASON;
+  await reply(
+    wantsReschedule
+      ? "รับทราบค่ะ 🙏\nทางร้านจะติดต่อกลับเพื่อนัดเวลาใหม่ให้นะคะ"
+      : `ขอบคุณที่บอกเหตุผลค่ะ 🙏 (${cancelReasonLabel(reason)})\nหวังว่าจะได้ดูแลคุณอีกครั้งนะคะ 🌙`,
+  );
+
+  if (wantsReschedule) {
+    await notifyBookingEvent(
+      { type: "reschedule_request", booking: saved },
+      {
+        token: ctx.token,
+        enabled: ctx.enabled,
+        fallbackOwnerId: ctx.fallbackOwnerId,
+      },
+    );
+  }
+
+  await sendCancellationToSheet(ctx.sheets, saved);
 }
 
 function cannotCancelText(b: { status: string; startsAt: Date }): string {

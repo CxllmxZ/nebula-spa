@@ -18,6 +18,8 @@ interface __BaseEnv_CloudflareEnv {
   CLOUDFLARE_D1_DATABASE_ID: string;
   CLOUDFLARE_D1_TOKEN: string;
   CRON_SECRET: string;
+  SHEETS_WEBHOOK_URL: string;
+  SHEETS_WEBHOOK_SECRET: string;
 }
 declare namespace Cloudflare {
   interface Env extends __BaseEnv_CloudflareEnv {}

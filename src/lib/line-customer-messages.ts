@@ -8,11 +8,13 @@
  *   cancel          → ถามซ้ำ
  *   cancel_confirm  → ยกเลิกจริง
  *   cancel_keep     → ไม่ยกเลิก
+ *   reason          → สาเหตุการยกเลิก (Day 43) — data มี r=<code>
  * ⚠️ data มีแค่รหัสจอง — สิทธิ์ตรวจใน webhook เสมอ (userId ต้องตรงกับคิว)
  */
 
 import type { LineMessage } from "@/lib/line";
 import { formatBangkokDate, formatBangkokTime } from "@/lib/line";
+import { CANCEL_REASONS, isCancelReasonCode } from "@/lib/cancel-reasons";
 
 export interface MessageBooking {
   code: string;
@@ -22,7 +24,11 @@ export interface MessageBooking {
   price: number;
 }
 
-export type CustomerAction = "cancel" | "cancel_confirm" | "cancel_keep";
+export type CustomerAction =
+  | "cancel"
+  | "cancel_confirm"
+  | "cancel_keep"
+  | "reason";
 
 /**
  * ปุ่ม [ยืนยันยกเลิก] ใช้ได้กี่นาทีหลังถาม
@@ -46,6 +52,8 @@ export interface ParsedPostback {
   code: string;
   /** เวลาที่ส่งข้อความถาม (เฉพาะ cancel_confirm) */
   issuedAt: Date | null;
+  /** รหัสสาเหตุ (เฉพาะ reason) — ผ่านการตรวจกับ CANCEL_REASONS แล้ว */
+  reason: string | null;
 }
 
 export function parsePostbackData(data: string): ParsedPostback | null {
@@ -56,15 +64,21 @@ export function parsePostbackData(data: string): ParsedPostback | null {
   if (
     action !== "cancel" &&
     action !== "cancel_confirm" &&
-    action !== "cancel_keep"
+    action !== "cancel_keep" &&
+    action !== "reason"
   ) {
     return null;
   }
+  const r = params.get("r");
+  const reason = r && isCancelReasonCode(r) ? r : null;
+  if (action === "reason" && !reason) return null; // สาเหตุที่ไม่รู้จัก → ไม่สนใจ
+
   const t = Number(params.get("t"));
   return {
     action,
     code,
     issuedAt: Number.isFinite(t) && t > 0 ? new Date(t * 1000) : null,
+    reason,
   };
 }
 
@@ -185,4 +199,30 @@ export function cancelConfirmMessage(b: MessageBooking): LineMessage {
 
 export function textMessage(text: string): LineMessage {
   return { type: "text", text };
+}
+
+/**
+ * ยกเลิกเรียบร้อย + ถามสาเหตุ (Day 43)
+ * ปุ่ม Quick Reply ใต้แชท แตะได้ 1 ปุ่ม — ไม่บังคับตอบ (ไม่แตะ = ไม่มีสาเหตุ)
+ */
+export function cancelledAskReasonMessage(code: string): LineMessage {
+  return {
+    type: "text",
+    text: `ยกเลิกการจอง ${code} เรียบร้อยแล้ว ✅\nทางร้านได้รับแจ้งแล้วค่ะ ขอบคุณที่แจ้งล่วงหน้า 🙏\n\nขอทราบสาเหตุหน่อยได้ไหมคะ? (ไม่บังคับ)\nร้านจะนำไปปรับปรุงบริการ`,
+    quickReply: {
+      items: CANCEL_REASONS.map((r) => ({
+        type: "action",
+        action: {
+          type: "postback",
+          label: r.label,
+          data: new URLSearchParams({
+            action: "reason",
+            code,
+            r: r.code,
+          }).toString(),
+          displayText: r.label,
+        },
+      })),
+    },
+  };
 }
