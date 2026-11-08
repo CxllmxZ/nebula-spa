@@ -140,7 +140,10 @@ export default async function ConfirmationPage({ params }: PageProps) {
           <div className="flex items-baseline justify-between gap-4">
             <dt className="text-foreground/60">เบอร์โทร</dt>
             <dd className="text-right font-mono text-foreground">
-              {booking.customerPhone}
+              {booking.customerPhone.replace(
+                /^(\d{2})\d+(\d{4})$/,
+                "$1x-xxx-$2",
+              )}
             </dd>
           </div>
         </dl>
